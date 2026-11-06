@@ -6,7 +6,7 @@
  * NUNCA coloque aqui a chave service_role nem segredos do Google.
  */
 window.FC_CONFIG = {
-  supabaseUrl: '',      // ex.: 'https://abcdefghijkl.supabase.co'
-  supabaseAnonKey: '',  // ex.: 'eyJhbGciOi...'
+  supabaseUrl: 'https://zegtrlzyfdydbsmymehi.supabase.co/rest/v1/',      // ex.: 'https://abcdefghijkl.supabase.co'
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InplZ3RybHp5ZmR5ZGJzbXltZWhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM5MTI0ODAsImV4cCI6MjEwOTQ4ODQ4MH0._lG4GMLmrS-3oGQKej0wgPvltSDKmgKd1_NnBsSwV1c',  // ex.: 'eyJhbGciOi...'
   driveBackendUrl: ''   // opcional: 'https://abcdefghijkl.supabase.co/functions/v1/drive'
 };
