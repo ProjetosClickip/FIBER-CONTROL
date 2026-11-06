@@ -251,8 +251,11 @@
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => store.user() && FC.rerender());
     // Configuração do repositório (fc-config.js) vale para todos, salvo se este navegador foi desconectado de propósito
     const cfg = window.FC_CONFIG || {};
-    if (cfg.supabaseUrl && cfg.supabaseAnonKey && !store.state.settings.supabase.url && !store.state.settings.supabaseOff) store.state.settings.supabase = { url: cfg.supabaseUrl.replace(/\/$/, ''), anonKey: cfg.supabaseAnonKey, fromConfig: true };
-    if (cfg.driveBackendUrl && !store.state.settings.drive.backendUrl) store.state.settings.drive.backendUrl = cfg.driveBackendUrl;
+    if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+      const url = cfg.supabaseUrl.trim().replace(/\/(rest|auth|storage|functions)\/v1.*$/i, '').replace(/\/+$/, '');
+      const cur = store.state.settings.supabase || {};
+      if (cur.url !== url || cur.anonKey !== cfg.supabaseAnonKey.trim() || store.state.settings.supabaseOff) { store.state.settings.supabase = { url, anonKey: cfg.supabaseAnonKey.trim(), fromConfig: true }; store.state.settings.supabaseOff = false; store.state.session = null; }
+    }    if (cfg.driveBackendUrl && !store.state.settings.drive.backendUrl) store.state.settings.drive.backendUrl = cfg.driveBackendUrl;
     const sb = store.state.settings.supabase;
     if (sb.url && sb.anonKey && !store.state.settings.supabaseOff) {
       try { await FC.supa.connect(sb.url, sb.anonKey); const { data } = await FC.supa.client.auth.getSession(); if (data.session) await FC.supa.pull(); else store.state.session = null; }
