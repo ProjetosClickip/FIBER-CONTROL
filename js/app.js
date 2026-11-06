@@ -255,7 +255,8 @@
       const url = cfg.supabaseUrl.trim().replace(/\/(rest|auth|storage|functions)\/v1.*$/i, '').replace(/\/+$/, '');
       const cur = store.state.settings.supabase || {};
       if (cur.url !== url || cur.anonKey !== cfg.supabaseAnonKey.trim() || store.state.settings.supabaseOff) { store.state.settings.supabase = { url, anonKey: cfg.supabaseAnonKey.trim(), fromConfig: true }; store.state.settings.supabaseOff = false; store.state.session = null; }
-    }    if (cfg.driveBackendUrl && !store.state.settings.drive.backendUrl) store.state.settings.drive.backendUrl = cfg.driveBackendUrl;
+    }
+    if (cfg.driveBackendUrl && !store.state.settings.drive.backendUrl) store.state.settings.drive.backendUrl = cfg.driveBackendUrl;
     const sb = store.state.settings.supabase;
     if (sb.url && sb.anonKey && !store.state.settings.supabaseOff) {
       try { await FC.supa.connect(sb.url, sb.anonKey); const { data } = await FC.supa.client.auth.getSession(); if (data.session) await FC.supa.pull(); else store.state.session = null; }
