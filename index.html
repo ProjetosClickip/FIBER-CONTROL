@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ClickIP FiberControl</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Projetos ClickIP FiberControl — gestão, análise e certificação de enlaces de fibra óptica (OTDR × OZmap).">
+<meta name="theme-color" content="#002947">
+<link rel="icon" type="image/png" href="assets/mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Nunito:wght@600;700;800&family=Baloo+2:wght@700;800&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="root"><div style="display:grid;place-items:center;min-height:100vh;color:#46596b;font-family:sans-serif">Carregando ClickIP FiberControl…</div></div>
+<div id="modals"></div>
+<div id="toasts" aria-live="polite"></div>
+
+<!-- Bibliotecas (versões fixas) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+
+<!-- Configuração do ambiente (Supabase) -->
+<script src="fc-config.js"></script>
+
+<!-- Núcleo -->
+<script src="js/core/util.js"></script>
+<script src="js/core/config.js"></script>
+<script src="js/core/sor-parser.js"></script>
+<script src="js/core/store.js"></script>
+<script src="js/core/seed.js"></script>
+<script src="js/core/calc.js"></script>
+<script src="js/core/importers.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/core/reports.js"></script>
+<script src="js/app.js"></script>
+
+<!-- Módulos (cada um se registra com FC.registerModule) -->
+<script src="js/modules/dashboard.js"></script>
+<script src="js/modules/enlaces.js"></script>
+<script src="js/modules/otdr.js"></script>
+<script src="js/modules/comparativo.js"></script>
+<script src="js/modules/caixas.js"></script>
+<script src="js/modules/fibras.js"></script>
+<script src="js/modules/certificacoes.js"></script>
+<script src="js/modules/historico.js"></script>
+<script src="js/modules/relatorios.js"></script>
+<script src="js/modules/drive.js"></script>
+<script src="js/modules/equipe.js"></script>
+<script src="js/modules/sobre.js"></script>
+<script src="js/modules/config.js"></script>
+<script src="js/modules/ferramentas.js"></script>
+<script>FC.boot();</script>
+</body>
+</html>
