@@ -51,10 +51,10 @@
       if (rule) set('regiao', rule.regiao, 'Regra POP → Região');
     }
     set('operador', gen.operator, 'Técnico gravado no OTDR');
-    if (gen.locationA && gen.locationB) set('trechoNome', `${gen.locationA}-${gen.locationB}`, 'Origem/Extremidade');
     // observações automáticas com tudo o que o teste informa e não tem campo próprio
     const obs = [gen.fiberId && 'Fibra: ' + gen.fiberId, gen.os && 'OS: ' + gen.os, gen.operator && 'Técnico OTDR: ' + gen.operator, gen.equipment && 'Equipamento: ' + gen.equipment, gen.calibration && 'Calibração: ' + gen.calibration, gen.direction && 'Direção: ' + gen.direction, gen.alarmStd && 'Limites: ' + gen.alarmStd].filter(Boolean);
     if (obs.length) { out.obs = obs.join(' · '); out.origem.obs = 'Dados do teste'; }
+    if (out.popA && out.popB) set('trechoNome', `${out.popA}-${out.popB}`, 'Origem/Extremidade');
     out.nome = out.popA && out.popB ? `${out.popA} x ${out.popB}` : (out.caboId || base);
     out.origem.nome = out.popA && out.popB ? 'Locais A/B' : out.caboId ? 'Cable ID' : 'Nome do arquivo';
     if (!out.projeto) { out.projeto = S.defaultProject; out.origem.projeto = 'Padrão (não encontrado no teste)'; }

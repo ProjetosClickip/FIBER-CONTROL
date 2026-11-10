@@ -251,6 +251,7 @@
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => store.user() && FC.rerender());
     // Configuração do repositório (fc-config.js) vale para todos, salvo se este navegador foi desconectado de propósito
     const cfg = window.FC_CONFIG || {};
+    // A configuração do repositório (fc-config.js) SEMPRE prevalece sobre o que estiver guardado no navegador
     if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
       const url = cfg.supabaseUrl.trim().replace(/\/(rest|auth|storage|functions)\/v1.*$/i, '').replace(/\/+$/, '');
       const cur = store.state.settings.supabase || {};

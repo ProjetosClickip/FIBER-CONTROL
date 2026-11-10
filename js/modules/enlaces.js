@@ -172,7 +172,8 @@
     let conflito = null;
     if (match.link && !FC.samePops(match.link, der)) { conflito = match.link; match = FC.matchTarget(der); }
     const L0 = match.link;
-    if (L0 && !match.trecho && der.trechoNome) match.trecho = store.state.trechos.find(t => t.linkId === L0.id && U.norm(t.nome) === U.norm(der.trechoNome)) || null;
+    if (L0 && !match.trecho && der.trechoNome) { const inv = der.popB && der.popA ? `${der.popB}-${der.popA}` : ''; match.trecho = store.state.trechos.find(t => t.linkId === L0.id && (U.norm(t.nome) === U.norm(der.trechoNome) || U.norm(t.nome) === U.norm(inv))) || null; }
+    if (L0 && !match.trecho) { const ts = store.state.trechos.filter(t => t.linkId === L0.id); if (ts.length === 1) match.trecho = ts[0]; }
     const T0 = match.trecho;
     const dup = store.state.measurements.find(m => m.fileHash === hash);
     const u = store.user(), now = U.now();
@@ -219,7 +220,7 @@
         const sel = U.$('#itLink', b), hint = U.$('#itLinkHint', b);
         const upd = () => {
           const l = sel.value ? store.get('links', sel.value) : null;
-          U.$('#itTr', b).innerHTML = trechoOpts(l && l.id, l && L0 && l.id === L0.id ? T0 : (l ? store.state.trechos.find(t => t.linkId === l.id && U.norm(t.nome) === U.norm(der.trechoNome)) : null));
+          U.$('#itTr', b).innerHTML = trechoOpts(l && l.id, l && L0 && l.id === L0.id ? T0 : (l ? (store.state.trechos.find(t => t.linkId === l.id && U.norm(t.nome) === U.norm(der.trechoNome)) || (store.state.trechos.filter(t => t.linkId === l.id).length === 1 ? store.state.trechos.find(t => t.linkId === l.id) : null)) : null));
           hint.innerHTML = !l ? '<span class="auto">Será criado um enlace novo com os dados do teste</span>' : FC.samePops(l, der) ? '<span class="auto">Mesmo POP de origem e destino do teste: a medição entra no histórico deste enlace</span>' : '<span class="warn-text">Atenção: os POPs deste enlace são diferentes dos POPs do teste</span>';
         };
         sel.onchange = upd; upd();

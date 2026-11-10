@@ -3,39 +3,6 @@
   'use strict';
   const U = FC.util, ui = FC.ui, C = FC.calc, store = FC.store;
 
-  /* ================= MAPA ================= */
-  let overlays = [];
-  function renderMapa(el) {
-    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Geografia</span><h1>Mapa dos enlaces</h1><p class="muted small">Trechos coloridos pela classificação do comparativo. Importe um KMZ/KML para sobrepor o traçado de projeto.</p></div>
-      <div class="acts"><button class="btn" id="kmz">${ui.icon('map')}Sobrepor KMZ/KML</button>${overlays.length ? '<button class="btn ghost" id="kclr">Limpar sobreposição</button>' : ''}</div></div>
-      <section class="panel"><div class="btn-row small"><span class="badge ok">Dentro da tolerância</span><span class="badge warn">Atenção</span><span class="badge bad">Fora da tolerância</span><span class="badge mute">Sem medição</span><span class="badge info">Certificado (linha contínua grossa)</span></div><div class="map" id="map"></div><p class="tiny muted" id="mapnote"></p></section>`;
-    U.$('#kmz').onclick = async () => { const [f] = await ui.pickFiles({ accept: '.kmz,.kml' }); if (!f) return; try { const g = await FC.geoio.readKMZ(f, f.name); overlays = g; ui.toast(`${g.length} geometria(s) lidas de ${f.name}.`, 'ok'); FC.rerender(); } catch (e) { ui.toast('KMZ inválido: ' + e.message, 'err'); } };
-    const kc = U.$('#kclr'); kc && (kc.onclick = () => { overlays = []; FC.rerender(); });
-    const ts = store.state.trechos.filter(t => t.coords && t.coords.length > 1);
-    const col = (t) => { const s = C.compare(t).status, p = ui.palette(); return s === 'verde' ? p.ok : s === 'amarelo' ? p.warn : s === 'vermelho' ? p.bad : p.mute; };
-    const box = U.$('#map');
-    if (!ts.length && !overlays.length) { box.innerHTML = `<div style="display:grid;place-items:center;height:100%;padding:20px;text-align:center"><p class="muted">Nenhum trecho com geometria. Anexe um KMZ ao trecho (Enlaces › trecho › Anexar) para desenhá-lo aqui.</p></div>`; return; }
-    if (window.L) {
-      const map = L.map(box, { preferCanvas: true });
-      const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-      tiles.on('tileerror', () => { U.$('#mapnote').textContent = 'Fundo cartográfico indisponível (sem internet ou bloqueado). As linhas continuam corretas.'; });
-      const all = [];
-      ts.forEach(t => {
-        const l = store.get('links', t.linkId), c = C.compare(t), cert = C.trechoStatus(t) === 'certificado';
-        const pl = L.polyline(t.coords, { color: col(t), weight: cert ? 7 : 4, opacity: .9, dashArray: C.latest(t.id) ? null : '6 6' }).addTo(map);
-        pl.bindPopup(`<b>${U.esc(l.nome)} / ${U.esc(t.nome)}</b><br>${U.esc(t.tipo || '')} · OZmap ${U.m(t.ozmapM, 0)}<br>OTDR ${U.m(c.otdr, 1)} · ${c.diffPct != null ? U.pct(c.diffPct) : 'sem medição'}<br>Status: ${C.statusLabel[C.trechoStatus(t)]}<br><a href="#tr-${t.id.slice(3)}">Abrir trecho</a>`);
-        all.push(...t.coords);
-      });
-      const pops = {}; store.state.links.forEach(l => { const ts2 = store.state.trechos.filter(t => t.linkId === l.id && t.coords).sort((a, b) => a.ordem - b.ordem); if (ts2.length) { pops[l.popA] = ts2[0].coords[0]; pops[l.popB] = ts2[ts2.length - 1].coords.slice(-1)[0]; } });
-      Object.entries(pops).forEach(([n, p]) => L.circleMarker(p, { radius: 7, color: '#002947', fillColor: '#fe6218', fillOpacity: 1, weight: 2 }).addTo(map).bindTooltip(n));
-      overlays.forEach(g => { if (g.point) L.circleMarker(g.coords[0], { radius: 4, color: '#2a6fb5' }).addTo(map).bindTooltip(g.name); else L.polyline(g.coords, { color: '#2a6fb5', weight: 2, dashArray: '4 4' }).addTo(map).bindTooltip(g.name + ' (KMZ)'); all.push(...g.coords); });
-      map.fitBounds(L.latLngBounds(all).pad(.1));
-      setTimeout(() => map.invalidateSize(), 100);
-    } else {
-      box.innerHTML = `<p class="muted" style="padding:16px">Biblioteca de mapas indisponível. Verifique a conexão.</p>`;
-    }
-  }
-
   /* ================= MANUTENÇÃO ================= */
   const TIPOS = ['Rompimento', 'Fusão', 'Reparo', 'Intervenção', 'Inspeção', 'Limpeza de conectores', 'Troca de cabo'];
   function manForm(pre = {}) {
@@ -111,7 +78,6 @@
     U.$('#ax').onclick = () => FC.reports.exportRows(rows().map(a => ({ 'Data/hora': U.dt(a.at), Usuário: a.user, Perfil: (FC.roles[a.role] || {}).label || '', Ação: a.acao, Entidade: FC.entityLabel(a.entidade), Detalhe: a.detalhe })), 'auditoria', 'xlsx', 'Auditoria');
   }
 
-  FC.registerModule({ id: 'mapa', order: 20, title: 'Mapa dos enlaces', icon: 'map', group: 'tools', field: true, render: renderMapa });
   FC.registerModule({ id: 'checklist', order: 21, title: 'Checklist de campo', icon: 'list', group: 'tools', field: true, render: renderCheck });
   FC.registerModule({ id: 'manutencao', order: 22, title: 'Manutenção', icon: 'wrench', group: 'tools', field: true, render: renderManut });
   FC.registerModule({ id: 'auditoria', order: 23, title: 'Auditoria', icon: 'audit', group: 'tools', field: false, render: renderAudit });

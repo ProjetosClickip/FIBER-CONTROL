@@ -139,6 +139,7 @@
   FC.supa = {
     client: null,
     async connect(url, key) {
+      url = String(url || '').trim().replace(/\/(rest|auth|storage|functions)\/v1.*$/i, '').replace(/\/+$/, ''); key = String(key || '').trim();
       await U.loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js');
       this.client = window.supabase.createClient(url, key, { auth: { persistSession: true } });
       const { error } = await this.client.from('configuracoes').select('id').limit(1);

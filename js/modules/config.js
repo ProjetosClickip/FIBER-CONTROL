@@ -130,7 +130,7 @@
     box.innerHTML = `<section class="grid g2"><div class="panel"><header><h3>Supabase (banco, autenticação e arquivos)</h3>${store.mode === 'supabase' ? ui.badge('verde', 'Conectado') : ui.badge('sem-dados', 'Não conectado')}</header>
       ${S.supabase.fromConfig ? `<div class="note ok">${ui.icon('check')}<div>Conexão definida no arquivo <code>fc-config.js</code> do repositório (vale para toda a equipe).</div></div>` : ''}<p class="small">Crie o projeto no Supabase, execute <code>supabase/schema.sql</code> e informe a URL e a chave <b>anon</b> (pública por desenho; a segurança vem das políticas RLS). Nunca use a chave <i>service_role</i> aqui.</p>
       <form class="form-grid" id="sbf">${ui.field('URL do projeto', ui.input('url', S.supabase.url, 'placeholder="https://xxxx.supabase.co"'), '', 'full')}${ui.field('Chave anon (pública)', ui.input('key', S.supabase.anonKey, 'placeholder="eyJ..."'), '', 'full')}</form>
-      <div class="btn-row">${store.mode === 'supabase' ? '<button class="btn" id="sbp">Reenviar dados deste navegador</button><button class="btn ghost" id="sbd">Desconectar</button>' : '<button class="btn primary" id="sbw">' + ui.icon('sync') + 'Migrar para o Supabase (assistente)</button>'}</div>
+      <div class="btn-row">${store.mode === 'supabase' ? '<button class="btn" id="sbp">Reenviar dados deste navegador</button>' + (S.supabase.fromConfig ? '' : '<button class="btn ghost" id="sbd">Desconectar</button>') : '<button class="btn primary" id="sbw">' + ui.icon('sync') + 'Migrar para o Supabase (assistente)</button>'}</div>
       ${location.protocol === 'file:' ? `<div class="note warn">${ui.icon('alert')}<div>Aberto como arquivo local: hospede a pasta (ex.: Netlify) ou rode <code>python3 -m http.server</code> para conectar ao Supabase.</div></div>` : ''}</div>
       <div class="panel"><header><h3>Google Drive</h3></header><p class="small">URL da Edge Function <code>drive</code> (ex.: <code>https://xxxx.supabase.co/functions/v1/drive</code>). Client ID e Client Secret do Google ficam <b>somente</b> nos segredos da função.</p>
       <form class="form-grid">${ui.field('URL do backend do Drive', ui.input('drv', S.drive.backendUrl, 'placeholder="https://xxxx.supabase.co/functions/v1/drive"'), '', 'full')}</form><button class="btn" id="drs">Salvar</button>
@@ -160,7 +160,7 @@
       <h4>4. Concluir</h4><button class="btn orange" id="w4" disabled>Passar a usar o Supabase</button>` });
     const b = md.el, $ = (id) => U.$('#' + id, b);
     $('w1').onclick = async () => {
-      const url = $('wurl').value.trim().replace(/\/$/, ''), key = $('wkey').value.trim();
+      const url = $('wurl').value.trim().replace(/\/(rest|auth|storage|functions)\/v1.*$/i, '').replace(/\/+$/, ''), key = $('wkey').value.trim();
       if (!/^https:\/\/[\w.-]+/.test(url) || key.length < 20) return ($('w1s').innerHTML = '<span class="bad-text">Informe a URL https e a chave anon.</span>');
       $('w1s').textContent = 'Conectando…';
       try { await FC.supa.connect(url, key); store.mode = 'local'; b._sb = { url, anonKey: key }; $('w1s').innerHTML = '<span class="ok-text">Conectado. Tabelas do schema encontradas.</span>'; $('w2a').disabled = $('w2b').disabled = false; }

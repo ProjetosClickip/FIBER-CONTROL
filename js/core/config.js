@@ -46,7 +46,42 @@
       requireBudgetOk: true, requireChecklist: false, requireSignature: true
     },
     history: { lossWorsenDb: 0.5, eventMatchM: 25 },
-    boxes: { matchM: 60, matchPct: 2, maxOffRouteM: 150 }, // casamento caixa OZmap × evento OTDR
+    boxes: { matchM: 60, matchPct: 2, maxOffRouteM: 150 },
+    // Códigos dos POPs usados nos testes OTDR (lista enviada pela ClickIP em 10/11/2026) → nome do POP no KMZ do OZmap
+    popAliases: [
+      { codigo: 'SEA', pop: 'POP-SANTA_ETELVINA' },
+      { codigo: 'VM2', pop: 'POP-VIVER_MELHOR2' },
+      { codigo: 'VM3', pop: 'POP-VIVER_MELHOR3' },
+      { codigo: 'TTS', pop: 'POP-TORQUATO' },
+      { codigo: 'MOS', pop: 'POP-MONTE_DAS_OLIVEIRAS' },
+      { codigo: 'NCE', pop: 'POP NOVA CIDADE' },
+      { codigo: 'DT2', pop: 'POP DISTRITO 2 -  DT2' },
+      { codigo: 'GVA', pop: 'POP-GRANDE_VITORIA' },
+      { codigo: 'TRA', pop: 'POP-TARUMÃ' },
+      { codigo: 'JTA', pop: 'POP-JORGE_TEIXEIRA' },
+      { codigo: 'RDE', pop: 'POP - RIACHO DOCE' },
+      { codigo: 'CDS', pop: 'POP CIDADE DE DEUS (CDS)' },
+      { codigo: 'JPO', pop: 'POP-JOAO_PAULO' },
+      { codigo: 'NAO', pop: 'POP-NOVO_ALEIXO' },
+      { codigo: 'SJ2', pop: 'POP SÃO JOSE - 2', obs: 'Inlink' },
+      { codigo: 'SJ1', pop: 'POP-SAO_JOSE - 1' },
+      { codigo: 'CAO', pop: 'POP-COLONIA_ANTONIO_ALEIXO' },
+      { codigo: 'AMS', pop: 'POP ARMANDO MENDES NOVO' },
+      { codigo: 'CPA', pop: '', obs: 'A confirmar' },
+      { codigo: 'RDV', pop: 'POP -RODOVIÁRIA' },
+      { codigo: 'FLR', pop: 'POP FLORES - FLR' },
+      { codigo: 'EMA', pop: 'POP ELIZA MIRANDA' },
+      { codigo: 'VBI', pop: 'POP VILA BURITI' },
+      { codigo: 'MZO', pop: 'POP-MAUAZINHO' },
+      { codigo: 'CTO', pop: 'POP- CENTRO NOVO' },
+      { codigo: 'ADS', pop: 'POP-ADRIANÓPOLIS' },
+      { codigo: 'COR', pop: 'POP-COROADO' },
+      { codigo: 'RIZ', pop: 'POP-RAIZ - RIZ' },
+      { codigo: 'MLE', pop: 'POP MORRO DA LIBERDADE (MLE)' },
+      { codigo: 'DC1', pop: 'DATA CENTER CLICKIP - SALA TELECOM 01', obs: 'Inferido (não estava na lista)' },
+      { codigo: 'DC2', pop: 'DATA CENTER CLICKIP - SALA TELECOM 02', obs: 'Inferido (não estava na lista)' }
+    ],
+    rede: { fator: 1.2 },    // fator fibra ÷ traçado desenhado, usado para localizar eventos no mapa // casamento caixa OZmap × evento OTDR
     notifications: { divergencia: true, certificacao: true, capacidade: true, piora: true, browser: false },
     regionRules: [
       { pattern: 'CTB|CWB|CURITIBA', regiao: 'Curitiba' },
