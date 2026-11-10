@@ -8,7 +8,7 @@
   'use strict';
   const U = FC.util, ui = FC.ui, store = FC.store, C = FC.calc;
   const CAT = 'Rede OZmap (KMZ)';
-  const M = { rede: null, g: null, map: null, layers: {}, codeOf: {}, tool: { mid: '', a: '', b: '', routes: [], ri: 0, fator: '', lance: null, showAll: false }, hl: { items: [], evs: [] }, R: null };
+  const M = { rede: null, g: null, map: null, layers: {}, codeOf: {}, tool: { mid: '', a: '', b: '', routes: [], ri: 0, fator: '', lance: null, showAll: false, sel: [] }, hl: { items: [], evs: [] }, R: null };
   const FO_COLORS = [[6, '#8a96a3', '≤ 6FO'], [12, '#0f9d6b', '12FO'], [24, '#2a6fb5', '24FO'], [36, '#7b5cff', '36FO'], [48, '#fe6218', '48FO'], [72, '#d7372b', '72FO'], [999, '#002947', '≥ 144FO']];
   const foColor = (fo) => (FO_COLORS.find(([m]) => (fo || 0) <= m) || FO_COLORS[FO_COLORS.length - 1])[1];
   const BOX_COLORS = { CEO: '#002947', CEOS: '#01a09c', CTO: '#0f9d6b', CDO: '#7b5cff' };
@@ -155,6 +155,7 @@
       const n = e.popup.getElement();
       U.$$('[data-popa]', n).forEach(b => b.onclick = () => { M.tool.a = b.dataset.popa; M.tool.routes = []; side('teste'); map.closePopup(); });
       U.$$('[data-popb]', n).forEach(b => b.onclick = () => { M.tool.b = b.dataset.popb; M.tool.routes = []; side('teste'); map.closePopup(); });
+      U.$$('[data-evsel]', n).forEach(b => b.onclick = () => { toggleSel(+b.dataset.evsel); map.closePopup(); });
       U.$$('[data-copy]', n).forEach(b => b.onclick = () => navigator.clipboard.writeText(b.dataset.copy).then(() => ui.toast('Coordenadas copiadas.', 'ok'), () => ui.toast('Copie manualmente: ' + b.dataset.copy, 'warn')));
       U.$$('[data-zoomc]', n).forEach(b => b.onclick = () => { const c = M.rede.data.cables[+b.dataset.zoomc]; map.fitBounds(L.latLngBounds(c.coords).pad(.3)); });
       U.$$('[data-gonode]', n).forEach(b => b.onclick = () => { const nd = graph().nodes[+b.dataset.gonode]; map.setView(nd.pt, Math.max(map.getZoom(), 17)); });
@@ -243,12 +244,12 @@
       ${R ? `<div class="kv mr-kv"><div><span class="k">Rota</span><span class="v">${U.m(R.r.len, 0)} desenhados</span></div><div><span class="k">Fibra (OTDR)</span><span class="v">${R.L ? U.m(R.L, 0) : '—'}</span></div><div><span class="k">Caixas</span><span class="v">${R.lances.length - 1}</span></div><div><span class="k">Trechos com atenção</span><span class="v">${R.lances.filter(x => x.pior >= 2).length}</span></div></div>
         <p class="note small">${ui.icon('map')}<span>Clique em um <b>cabo da rota</b> no mapa para ver as atenuações daquele trecho entre caixas.</span></p>
         <label class="check small"><input type="checkbox" id="taAll" ${T.showAll ? 'checked' : ''}> Mostrar todas as atenuações da rota</label>
-        <div id="taLance"></div>
+        <div id="taLance"></div><div id="taSel"></div>
         <h4>Trechos entre caixas</h4><div class="mr-lances">${R.lances.map(x => `<button class="mr-lance ${T.lance === x.i ? 'on' : ''}" data-lance="${x.i}"><span>${x.i + 1}. ${U.esc(short(x.from.nome))} → ${U.esc(short(x.to.nome))}</span><span class="tiny muted">${U.m(x.fib0, 0)}–${U.m(x.fib1, 0)}</span>${x.evs.length ? `<span class="mr-dot ${x.pior >= 3 ? 'bad' : x.pior >= 2 ? 'warn' : ''}">${x.evs.length}</span>` : ''}</button>`).join('')}</div>
         <div class="btn-row"><button class="btn sm" id="taFit">${ui.icon('map')}Ver rota inteira</button></div>` : (T.mid && !r ? '<p class="small muted">Confira a origem e o destino e clique em Traçar rota.</p>' : '<p class="small muted">Escolha um teste: a rota inteira aparece em destaque no mapa.</p>')}`;
     const $ = (id) => U.$('#' + id);
     $('taM').onchange = () => {
-      T.mid = $('taM').value; T.routes = []; T.lance = null; T.fator = ''; M.R = null; clearHL();
+      T.mid = $('taM').value; T.routes = []; T.lance = null; T.fator = ''; T.sel = []; M.R = null; clearHL();
       const mm = store.get('measurements', T.mid);
       if (mm) { const l = store.get('links', mm.linkId) || {}; T.a = popByCode(l.popA) || T.a; T.b = popByCode(l.popB) || T.b; if (mm.direcaoInversa) [T.a, T.b] = [T.b, T.a]; }
       if (T.mid && T.a && T.b) traceRoute(); else tabTeste();
@@ -263,6 +264,7 @@
     U.$$('[data-lance]').forEach(b => b.onclick = () => selectLance(+b.dataset.lance, true));
     const fit = $('taFit'); fit && (fit.onclick = () => M.map.fitBounds(L.latLngBounds(M.R.r.det.coords).pad(.1)));
     if (R && T.lance != null) lanceDetail();
+    if (R) selPanel();
   }
 
   function traceRoute() {
@@ -334,12 +336,14 @@
   function drawEvents() {
     const R = M.R; if (!R) return;
     (M.hl.evs || []).forEach(l => M.map.removeLayer(l)); M.hl.evs = [];
-    const show = M.tool.showAll ? R.evs : (M.tool.lance != null ? R.lances[M.tool.lance].evs : []);
+    const sel = new Set(M.tool.sel);
+    const base = M.tool.showAll ? R.evs : (M.tool.lance != null ? R.lances[M.tool.lance].evs : []);
+    const show = base.concat(R.evs.filter(e => sel.has(e.n) && !base.includes(e)));
     show.forEach(e => {
-      const p = pointAt(R.r.det.coords, e.x).pt, col = e.end ? '#111' : LV[e.level] || '#2a6fb5';
-      const mk = L.circleMarker(p, { radius: e.level === 'reprovado' || e.end ? 10 : 8, color: '#fff', weight: 3, fillColor: col, fillOpacity: 1, className: e.level === 'reprovado' ? 'mr-pulse' : '' })
+      const p = pointAt(R.r.det.coords, e.x).pt, col = e.end ? '#111' : LV[e.level] || '#2a6fb5', on = sel.has(e.n);
+      const mk = L.circleMarker(p, { radius: e.level === 'reprovado' || e.end ? 10 : 8, color: on ? '#fe6218' : '#fff', weight: on ? 5 : 3, fillColor: col, fillOpacity: 1, className: e.level === 'reprovado' ? 'mr-pulse' : '' })
         .bindTooltip(`Ev. ${e.n} · ${U.m(e.distM, 0)} · ${U.db(e.loss, 3)}`, { permanent: true, direction: 'right', className: 'mr-pop mr-evt', offset: [10, 0] })
-        .bindPopup(`<b>Evento ${e.n}</b> · ${U.esc(e.tipo)}<br>${U.m(e.distM, 1)} no OTDR · ${U.db(e.loss, 3)}${e.reflectance ? ' · refl. ' + U.db(e.reflectance, 1) : ''}<br>${ui.badge(e.end ? 'info' : e.level, e.end ? 'Fim de fibra' : undefined)}${e.note ? '<br><i>' + U.esc(e.note) + '</i>' : ''}<br><span class="tiny">${p[0].toFixed(6)}, ${p[1].toFixed(6)}</span><div class="mr-pp-btns"><button class="btn sm" data-copy="${p[0].toFixed(6)}, ${p[1].toFixed(6)}">Copiar</button><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[0].toFixed(6)},${p[1].toFixed(6)}">Google Maps</a></div>`);
+        .bindPopup(`<b>Evento ${e.n}</b> · ${U.esc(e.tipo)}<br>${U.m(e.distM, 1)} no OTDR · ${U.db(e.loss, 3)}${e.reflectance ? ' · refl. ' + U.db(e.reflectance, 1) : ''}<br>${ui.badge(e.end ? 'info' : e.level, e.end ? 'Fim de fibra' : undefined)}${e.note ? '<br><i>' + U.esc(e.note) + '</i>' : ''}<br><span class="tiny">${p[0].toFixed(6)}, ${p[1].toFixed(6)}</span><div class="mr-pp-btns"><button class="btn sm ${on ? '' : 'orange'}" data-evsel="${e.n}">${on ? 'Remover do KMZ' : '+ Incluir no KMZ'}</button><button class="btn sm" data-copy="${p[0].toFixed(6)}, ${p[1].toFixed(6)}">Copiar</button><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[0].toFixed(6)},${p[1].toFixed(6)}">Google Maps</a></div>`);
       M.hl.evs.push(mk.addTo(M.map));
     });
   }
@@ -361,10 +365,34 @@
     const near = (e) => { const a = (e.x - x.x0) * R.f, b = (x.x1 - e.x) * R.f; return a <= 25 ? `na caixa ${short(x.from.nome)}` : b <= 25 ? `na caixa ${short(x.to.nome)}` : `${U.m(a, 0)} após ${short(x.from.nome)}`; };
     box.innerHTML = `<div class="mr-lance-det"><b>Trecho ${x.i + 1}: ${U.esc(short(x.from.nome))} → ${U.esc(short(x.to.nome))}</b>
       <p class="tiny muted">${U.m(x.x1 - x.x0, 0)} desenhados (~${U.m((x.x1 - x.x0) * R.f, 0)} de fibra) · OTDR de ${U.m(x.fib0, 0)} a ${U.m(x.fib1, 0)} · ${x.cabos.map(c => U.esc(c.nome) + ' (' + (c.fo || '?') + 'FO)').join(', ')}</p>
-      ${x.evs.length ? `<div class="table-scroll"><table class="tbl"><thead><tr><th>Ev.</th><th class="num">OTDR</th><th class="num">Perda</th><th>Onde</th><th></th></tr></thead><tbody>${x.evs.map(e => `<tr class="${e.level === 'reprovado' ? 'row-bad' : e.level === 'atencao' ? 'row-warn' : ''}"><td>${e.n}</td><td class="num">${U.m(e.distM, 0)}</td><td class="num">${U.db(e.loss, 3)}${e.reflectance ? `<br><span class="tiny muted">${U.db(e.reflectance, 1)}</span>` : ''}</td><td class="tiny">${U.esc(near(e))}</td><td>${ui.badge(e.end ? 'info' : e.level, e.end ? 'Fim' : undefined)}</td></tr>`).join('')}</tbody></table></div>` : `<p class="small ok-text">Nenhuma atenuação registrada neste trecho.</p>`}
+      ${x.evs.length ? `<div class="table-scroll"><table class="tbl"><thead><tr><th><input type="checkbox" id="taSelAll" title="Selecionar todos deste trecho" aria-label="Selecionar todos os eventos deste trecho" ${x.evs.every(e => M.tool.sel.includes(e.n)) ? 'checked' : ''}></th><th>Evento</th><th class="num">OTDR · perda</th><th>Onde</th></tr></thead><tbody>${x.evs.map(e => `<tr class="${e.level === 'reprovado' ? 'row-bad' : e.level === 'atencao' ? 'row-warn' : ''}"><td><input type="checkbox" data-sel="${e.n}" aria-label="Selecionar evento ${e.n}" ${M.tool.sel.includes(e.n) ? 'checked' : ''}></td><td><b>${e.n}</b><br>${ui.badge(e.end ? 'info' : e.level, e.end ? 'Fim' : { excelente: 'Excelente', ok: 'OK', atencao: 'Atenção', reprovado: 'Reprovado' }[e.level])}</td><td class="num">${U.m(e.distM, 0)}<br>${U.db(e.loss, 3)}${e.reflectance ? `<br><span class="tiny muted">refl. ${U.db(e.reflectance, 1)}</span>` : ''}</td><td class="tiny">${U.esc(near(e))}</td></tr>`).join('')}</tbody></table></div>` : `<p class="small ok-text">Nenhuma atenuação registrada neste trecho.</p>`}
       <div class="btn-row"><button class="btn sm" id="taZoomL">${ui.icon('map')}Aproximar</button><button class="btn sm orange" id="taKmz">${ui.icon('download')}Exportar KMZ deste trecho</button></div></div>`;
     U.$('#taZoomL').onclick = () => M.map.fitBounds(L.latLngBounds(x.coords).pad(.5));
-    U.$('#taKmz').onclick = () => exportKMZ(x);
+    U.$('#taKmz').onclick = () => exportKMZ({ lances: [x], evs: x.evs });
+    U.$$('[data-sel]', box).forEach(c => c.onchange = () => toggleSel(+c.dataset.sel, c.checked));
+    const all = U.$('#taSelAll', box); all && (all.onchange = () => { x.evs.forEach(e => toggleSel(e.n, all.checked, true)); refreshSel(); });
+  }
+
+  /* ---------- Seleção de eventos para um KMZ único ---------- */
+  function toggleSel(n, on, silent) {
+    const T = M.tool, has = T.sel.includes(n), want = on == null ? !has : on;
+    if (want && !has) T.sel.push(n); if (!want && has) T.sel = T.sel.filter(v => v !== n);
+    if (!silent) refreshSel();
+  }
+  function refreshSel() { drawEvents(); if (M.tool.lance != null) lanceDetail(); selPanel(); }
+  const lanceOf = (e) => M.R.lances.find(x => x.evs.includes(e));
+  function selPanel() {
+    const R = M.R, box = U.$('#taSel'); if (!R || !box) return;
+    const evs = R.evs.filter(e => M.tool.sel.includes(e.n)).sort((a, b) => a.distM - b.distM);
+    const ruins = R.evs.filter(e => e.level === 'reprovado' || e.level === 'atencao');
+    box.innerHTML = `<div class="mr-sel"><b>Eventos selecionados para o KMZ (${evs.length})</b>
+      ${evs.length ? `<div class="mr-sel-list">${evs.map(e => { const x = lanceOf(e); return `<span class="mr-chip ${e.level}"><b>Ev. ${e.n}</b> ${U.m(e.distM, 0)} · ${U.db(e.loss, 2)}<span class="tiny muted"> · trecho ${x ? x.i + 1 : '?'}</span><button data-unsel="${e.n}" title="Remover" aria-label="Remover evento ${e.n}">×</button></span>`; }).join('')}</div>`
+        : '<p class="tiny muted">Marque os eventos na lista do trecho (caixa de seleção) ou no ponto do mapa (“+ Incluir no KMZ”). Dá para juntar eventos de trechos diferentes.</p>'}
+      <div class="btn-row">${ruins.length ? `<button class="btn sm" id="taSelBad">${ruins.length === 1 ? 'Selecionar o evento com atenção/reprovado' : `Selecionar os ${ruins.length} com atenção/reprovados`}</button>` : ''}${evs.length ? `<button class="btn sm ghost" id="taSelClr">Limpar</button><button class="btn sm orange" id="taSelKmz">${ui.icon('download')}${evs.length === 1 ? 'Exportar KMZ do evento selecionado' : `Exportar KMZ dos ${evs.length} selecionados`}</button>` : ''}</div></div>`;
+    U.$$('[data-unsel]', box).forEach(b => b.onclick = () => toggleSel(+b.dataset.unsel, false));
+    const bad = U.$('#taSelBad', box); bad && (bad.onclick = () => { ruins.forEach(e => toggleSel(e.n, true, true)); refreshSel(); });
+    const clr = U.$('#taSelClr', box); clr && (clr.onclick = () => { M.tool.sel = []; refreshSel(); });
+    const kz = U.$('#taSelKmz', box); kz && (kz.onclick = () => { const ls = [...new Set(evs.map(lanceOf).filter(Boolean))].sort((a, b) => a.i - b.i); exportKMZ({ lances: ls, evs, multi: true }); });
   }
 
   /** Ponto na distância x (m) ao longo da polilinha */
@@ -381,16 +409,21 @@
   const short = (n) => String(n || '').replace(/^POP\s*[-–]?\s*/i, '').replace(/\s*\(CLICKIP[^)]*\)/i, '').trim();
   function clearHL() { if (M.hl && M.map) [...(M.hl.items || []), ...(M.hl.evs || [])].forEach(l => M.map.removeLayer(l)); M.hl = { items: [], evs: [] }; }
 
-  /* ---------- KMZ só do trecho entre caixas (com as atenuações dele) ---------- */
-  async function exportKMZ(x) {
-    const R = M.R; if (!R || !x) return;
+  /* ---------- KMZ: um trecho entre caixas, ou vários eventos selecionados (com os trechos deles) ---------- */
+  async function exportKMZ({ lances, evs, multi }) {
+    const R = M.R; if (!R || !lances.length) return;
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const ll = (p) => `${p[1].toFixed(7)},${p[0].toFixed(7)},0`;
     const l = R.m ? store.get('links', R.m.linkId) || {} : {};
-    const titulo = `Trecho ${short(x.from.nome)} → ${short(x.to.nome)}`;
-    const cab = [R.m ? `Teste: ${l.nome || ''} · ${U.dt(R.m.data)} · ${R.m.fileName || ''}` : '', `Rota: ${M.tool.a} → ${M.tool.b}`, `Trecho ${x.i + 1}: ${x.from.nome} → ${x.to.nome} · ${U.num(x.x1 - x.x0, 0)} m desenhados (~${U.num((x.x1 - x.x0) * R.f, 0)} m de fibra) · OTDR ${U.num(x.fib0, 0)}–${U.num(x.fib1, 0)} m`, `Cabos: ${x.cabos.map(c => c.nome + ' — ' + c.tipo).join('; ')}`, `Fator fibra ÷ traçado: ${U.num(R.f, 3)}${R.launch ? ` · bobina de lançamento ${R.launch} m` : ''}`, `Rede: ${M.rede.arquivo}`].filter(Boolean);
+    const x0 = lances[0];
+    const titulo = multi ? `${evs.length} evento(s) selecionado(s) · ${short(M.tool.a)} → ${short(M.tool.b)}` : `Trecho ${short(x0.from.nome)} → ${short(x0.to.nome)}`;
+    const cab = [R.m ? `Teste: ${l.nome || ''} · ${U.dt(R.m.data)} · ${R.m.fileName || ''}` : '', `Rota: ${M.tool.a} → ${M.tool.b}`, multi ? `Eventos: ${evs.map(e => e.n).join(', ')} · ${lances.length} trecho(s) entre caixas` : '', `Fator fibra ÷ traçado: ${U.num(R.f, 3)}${R.launch ? ` · bobina de lançamento ${R.launch} m` : ''}`, `Rede: ${M.rede.arquivo}`].filter(Boolean);
     const boxPt = (b) => b.lat != null ? [b.lat, b.lng] : pointAt(R.r.det.coords, b.distKmzM).pt;
-    const evPm = x.evs.map(e => { const p = pointAt(R.r.det.coords, e.x).pt; const d = [`${e.tipo} · ${U.num(e.distM, 1)} m no OTDR`, `Perda ${U.num(e.loss, 3)} dB${e.reflectance ? ' · refletância ' + U.num(e.reflectance, 1) + ' dB' : ''}`, e.end ? 'Fim de fibra' : (C.resultLabel[e.level] || ''), e.note || '', `${p[0].toFixed(6)}, ${p[1].toFixed(6)}`].filter(Boolean);
+    const descL = (x) => `Trecho ${x.i + 1}: ${x.from.nome} → ${x.to.nome} · ${U.num(x.x1 - x.x0, 0)} m desenhados (~${U.num((x.x1 - x.x0) * R.f, 0)} m de fibra) · OTDR ${U.num(x.fib0, 0)}–${U.num(x.fib1, 0)} m\nCabos: ${x.cabos.map(c => c.nome + ' — ' + c.tipo).join('; ')}`;
+    const linhas = lances.map(x => `<Placemark><name>${esc(`Trecho ${x.i + 1}: ${short(x.from.nome)} → ${short(x.to.nome)}`)}</name><styleUrl>#seg</styleUrl><description>${esc(descL(x))}</description><LineString><tessellate>1</tessellate><coordinates>${x.coords.map(ll).join(' ')}</coordinates></LineString></Placemark>`).join('\n');
+    const caixas = []; lances.forEach(x => [x.from, x.to].forEach(b => { if (!caixas.some(c => c.nome === b.nome)) caixas.push(b); }));
+    const cx = caixas.map(b => `<Placemark><name>${esc(b.nome)}</name><styleUrl>#cx</styleUrl><description>${esc(`${b.tipo ? b.tipo + ' · ' : ''}${U.num(b.distKmzM * R.f + R.launch, 0)} m de fibra no OTDR`)}</description><Point><coordinates>${ll(boxPt(b))}</coordinates></Point></Placemark>`).join('\n');
+    const evPm = evs.map(e => { const p = pointAt(R.r.det.coords, e.x).pt, x = lanceOf(e); const d = [`${e.tipo} · ${U.num(e.distM, 1)} m no OTDR`, `Perda ${U.num(e.loss, 3)} dB${e.reflectance ? ' · refletância ' + U.num(e.reflectance, 1) + ' dB' : ''}`, e.end ? 'Fim de fibra' : (C.resultLabel[e.level] || ''), e.note || '', x ? `Trecho ${x.i + 1}: entre ${x.from.nome} e ${x.to.nome}` : '', `${p[0].toFixed(6)}, ${p[1].toFixed(6)}`].filter(Boolean);
       return `<Placemark><name>${esc(`Evento ${e.n} · ${U.num(e.loss, 2)} dB`)}</name><styleUrl>#${e.level === 'reprovado' || e.end ? 'evr' : e.level === 'atencao' ? 'eva' : 'evo'}</styleUrl><description><![CDATA[${d.map(esc).join('<br>')}<br><a href="https://www.google.com/maps?q=${p[0].toFixed(6)},${p[1].toFixed(6)}">Abrir no Google Maps</a>]]></description><Point><coordinates>${ll(p)}</coordinates></Point></Placemark>`; }).join('\n');
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(titulo)}</name><description>${esc(cab.join('\n'))}</description>
@@ -399,15 +432,19 @@
 <Style id="eva"><IconStyle><color>ff008ac9</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/caution.png</href></Icon></IconStyle></Style>
 <Style id="evo"><IconStyle><color>ff6b9d0f</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>
 <Style id="cx"><IconStyle><color>ffaa6a00</color><Icon><href>http://maps.google.com/mapfiles/kml/paddle/wht-circle.png</href></Icon></IconStyle></Style>
-<Placemark><name>${esc(titulo)}</name><styleUrl>#seg</styleUrl><description>${esc(cab.join('\n'))}</description><LineString><tessellate>1</tessellate><coordinates>${x.coords.map(ll).join(' ')}</coordinates></LineString></Placemark>
-${[x.from, x.to].map((b, i) => `<Placemark><name>${esc(b.nome)}</name><styleUrl>#cx</styleUrl><description>${esc(`${i ? 'Fim' : 'Início'} do trecho${b.tipo ? ' · ' + b.tipo : ''} · ${U.num(b.distKmzM * R.f + R.launch, 0)} m de fibra no OTDR`)}</description><Point><coordinates>${ll(boxPt(b))}</coordinates></Point></Placemark>`).join('\n')}
+<Folder><name>Eventos (${evs.length})</name>
 ${evPm}
-</Document></kml>`;
+</Folder><Folder><name>Trechos entre caixas (${lances.length})</name>
+${linhas}
+</Folder><Folder><name>Caixas e POPs (${caixas.length})</name>
+${cx}
+</Folder></Document></kml>`;
     const zip = new JSZip(); zip.file('doc.kml', kml);
     const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.google-earth.kmz' });
-    const nome = ('trecho-' + short(x.from.nome) + '-' + short(x.to.nome)).replace(/[^\w-]+/g, '-').replace(/-+/g, '-').toLowerCase() + '.kmz';
+    const base = multi ? `eventos-${evs.map(e => e.n).join('-')}-${short(M.tool.a)}-${short(M.tool.b)}` : `trecho-${short(x0.from.nome)}-${short(x0.to.nome)}`;
+    const nome = base.replace(/[^\w-]+/g, '-').replace(/-+/g, '-').toLowerCase().slice(0, 90) + '.kmz';
     U.download(blob, nome);
-    store.audit('exportou', 'rede', null, `${nome}: ${x.evs.length} evento(s)`);
+    store.audit('exportou', 'rede', null, `${nome}: ${evs.length} evento(s), ${lances.length} trecho(s)`);
   }
 
   /* ---------- Códigos dos POPs ---------- */
@@ -442,7 +479,10 @@ ${evPm}
   .mr-num span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#fff;color:#002947;border:2px solid #002947;font:700 10px var(--font-mono);box-shadow:0 1px 3px rgba(0,0,0,.35)}.mr-popend span{width:26px;height:26px;background:#fe6218;color:#fff;border-color:#fff;font-size:12px}
   .mr-kv{grid-template-columns:repeat(2,minmax(0,1fr))}.mr-lances{display:grid;gap:4px}.mr-lance{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:7px 9px;cursor:pointer;font:500 12px var(--font-body)}.mr-lance:hover{border-color:var(--accent)}.mr-lance.on{border-color:var(--orange);background:var(--accent-soft)}
   .mr-dot{min-width:20px;height:20px;border-radius:10px;display:grid;place-items:center;font:700 11px var(--font-mono);background:var(--mute-bg);color:var(--fg-2)}.mr-dot.warn{background:var(--warn);color:#fff}.mr-dot.bad{background:var(--bad);color:#fff}
-  .mr-lance-det{border:2px solid var(--orange);border-radius:10px;padding:10px;display:grid;gap:6px}
+  .mr-lance-det{border:2px solid var(--orange);border-radius:10px;padding:10px;display:grid;gap:6px}.mr-lance-det .tbl{font-size:12px}.mr-lance-det .tbl td,.mr-lance-det .tbl th{padding:6px 7px}
+  .mr-sel{border:1px dashed var(--line-2);border-radius:10px;padding:10px;display:grid;gap:8px;margin-top:8px;background:var(--surface-2)}.mr-sel-list{display:flex;flex-wrap:wrap;gap:6px}
+  .mr-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 4px 3px 9px;border-radius:14px;background:var(--surface);border:1px solid var(--line);font-size:12px}.mr-chip.reprovado{border-color:var(--bad)}.mr-chip.atencao{border-color:var(--warn)}
+  .mr-chip button{border:0;background:var(--mute-bg);color:var(--fg-2);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1}
   .mr-grid:fullscreen{background:var(--bg);padding:10px}.mr-grid:fullscreen .mr-map,.mr-grid:fullscreen .mr-side{height:calc(100vh - 20px);max-height:none}.mr-pulse{animation:mrp 1.2s ease-in-out infinite}@keyframes mrp{50%{stroke-width:9;stroke-opacity:.4}}
   .leaflet-control-layers{background:var(--surface);color:var(--fg);border-radius:8px;box-shadow:0 1px 5px rgba(0,0,0,.35);padding:6px 10px;font-size:12px}.leaflet-control-layers label{display:flex;gap:6px;align-items:center}.leaflet-control-layers-toggle{display:none}.leaflet-control-scale-line{background:rgba(255,255,255,.8);border:2px solid #555;border-top:0;padding:0 4px;font-size:11px;color:#333}
   body.field .mr-map{height:62vh}
@@ -450,6 +490,6 @@ ${evPm}
   @media (prefers-reduced-motion:reduce){.mr-pulse{animation:none}}`;
   document.head.appendChild(st);
 
-  FC.mapaRede = { loadSaved, parseFile, setRede, state: M, build, selectLance, exportKMZ };
+  FC.mapaRede = { loadSaved, parseFile, setRede, state: M, build, selectLance, exportKMZ, toggleSel };
   FC.registerModule({ id: 'mapa', order: 20, title: 'Mapa da rede', icon: 'map', group: 'tools', field: true, render });
 })(window.FC = window.FC || {});
