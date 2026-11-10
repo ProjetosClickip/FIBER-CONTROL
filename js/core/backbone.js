@@ -135,7 +135,7 @@
       cabos.push({ nome: c.name, tipo: c.tipo, fo: c.fo, estado: c.estado, obs: c.obs, inicioM: acc, len: c.len });
       acc += c.len;
       const n = g.nodes[route.nodes[i + 1]];
-      if (i < route.edges.length - 1 && n.kind !== 'JUNCAO') caixas.push({ nome: n.name, tipo: n.tipo || n.kind, distKmzM: acc, lat: n.pt[0], lng: n.pt[1] });
+      if (i < route.edges.length - 1 && n.kind !== 'JUNCAO') caixas.push({ id: n.id, nome: n.name, tipo: n.tipo || n.kind, distKmzM: acc, lat: n.pt[0], lng: n.pt[1] });
     });
     const fos = cabos.filter(c => c.fo).map(c => c.fo);
     const byFo = {}; cabos.forEach(c => { if (c.fo) byFo[c.fo] = (byFo[c.fo] || 0) + c.len; });
