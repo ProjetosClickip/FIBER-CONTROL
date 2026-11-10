@@ -104,7 +104,7 @@
       <div class="illus"><svg viewBox="0 0 700 170" class="scene"><path d="M30 120 L670 120" stroke="#2a6fb5" stroke-width="3" stroke-dasharray="8 6"/><text x="350" y="150" text-anchor="middle" font-size="12" fill="currentColor">Traçado OZmap (linha no mapa)</text>
       <path d="M30 70 L120 70 Q130 30 140 70 L240 70 q8 -40 16 0 q8 40 16 0 L360 70 L380 30 L400 70 L520 70 q10 -45 20 0 L670 70" stroke="#fe6218" stroke-width="4" fill="none"/><text x="350" y="22" text-anchor="middle" font-size="12" fill="currentColor">Cabo real: subidas em postes, reservas técnicas, curvas e desvios</text>
       <text x="130" y="96" font-size="10" text-anchor="middle" fill="currentColor">subida</text><text x="264" y="100" font-size="10" text-anchor="middle" fill="currentColor">reserva</text><text x="390" y="96" font-size="10" text-anchor="middle" fill="currentColor">desvio</text></svg></div>
-      ${say('lia', lvl('Por isso a gente define uma <b>tolerância</b>: até alguns % de diferença é normal. Acima disso, vale revisar o traçado ou procurar reservas não cadastradas.', 'Além das sobras de campo, a fibra é mais longa que o cabo (excesso de fibra/EFL da construção em tubo loose). O FiberControl calcula o fator médio OTDR ÷ OZmap por tipo de trecho e só aplica após aprovação.'), 'right')}`],
+      ${say('lia', lvl('Por isso a gente define uma <b>tolerância</b>: até alguns % de diferença é normal. Acima disso, vale revisar o traçado ou procurar reservas não cadastradas.', 'Além das sobras de campo, a fibra é mais longa que o cabo (excesso de fibra/EFL da construção em tubo loose). Por isso a comparação usa uma tolerância por tipo de trecho (aéreo, subterrâneo, misto).'), 'right')}`],
     ['Quiz técnico', () => quizHTML()]
   ];
   function evIcon(k) {

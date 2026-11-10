@@ -52,7 +52,7 @@
 
   /* ---------------- Sessão e permissões ---------------- */
   store.user = () => store.state.session ? store.get('users', store.state.session.userId) : null;
-  store.can = (perm) => { const u = store.user(); return !!u && (FC.permissions[perm] || []).includes(u.role); };
+  store.can = (perm) => { const u = store.user(); if (!u) return false; if ((FC.adminOnly || []).includes(perm)) return u.role === 'admin'; return (FC.permissions[perm] || []).includes(u.role); };
   store.require = (perm) => { if (store.can(perm)) return true; FC.ui.toast('Seu perfil (' + (FC.roles[(store.user() || {}).role] || {}).label + ') não permite: ' + (FC.permissionLabels[perm] || perm), 'err'); return false; };
 
   /* ---------------- Auditoria ---------------- */
@@ -200,7 +200,36 @@
       try { await this.saveSettings(st.settings); } catch (e) { errors.push(e.message); } step('configurações');
       return { total, errors };
     },
+    async removeFile(path) { const { error } = await this.client.storage.from('anexos').remove([path]); if (error) throw error; },
     async download(path) { const { data, error } = await this.client.storage.from('anexos').download(path); return error ? null : data; }
+  };
+
+  /** Exclui um anexo do aparelho e do Storage */
+  store.removeAttachment = async (att, motivo) => {
+    await U.idb.del('files', att.id);
+    if (store.mode === 'supabase' && att.storagePath) { try { await FC.supa.removeFile(att.storagePath); } catch (e) { /* segue: registro removido mesmo assim */ } }
+    store.remove('attachments', att.id, motivo || 'Anexo ' + att.nome);
+  };
+  /** Exclui uma medição e o anexo/traço dela (somente Administrador) */
+  store.deleteMeasurement = async (m) => {
+    if (!store.require('medicao.excluir')) return false;
+    const att = m.attachmentId && store.get('attachments', m.attachmentId);
+    if (att) await store.removeAttachment(att, 'Anexo da medição ' + (m.fileName || ''));
+    await U.idb.del('traces', m.id);
+    store.remove('measurements', m.id, `Medição excluída: ${m.fileName || m.source} (${U.dt(m.data)}, enviada por ${m.responsavel || '—'})`);
+    return true;
+  };
+  /** Exclui o enlace com trechos, medições, anexos, manutenções e versões (somente Administrador) */
+  store.deleteLink = async (link) => {
+    if (!store.require('enlace.excluir')) return false;
+    const st = store.state, ts = st.trechos.filter(t => t.linkId === link.id).map(t => t.id);
+    for (const m of st.measurements.filter(m => m.linkId === link.id || ts.includes(m.trechoId))) { await U.idb.del('traces', m.id); store.remove('measurements', m.id); }
+    for (const a of st.attachments.filter(a => a.linkId === link.id || ts.includes(a.trechoId))) await store.removeAttachment(a);
+    st.maintenance.filter(x => x.linkId === link.id).forEach(x => store.remove('maintenance', x.id));
+    st.versions.filter(x => x.linkId === link.id).forEach(x => store.remove('versions', x.id));
+    ts.forEach(id => store.remove('trechos', id));
+    store.remove('links', link.id, `Enlace excluído pelo administrador: ${link.nome} (${ts.length} trechos; cadastrado por ${link.responsavel || '—'})`);
+    return true;
   };
 
   store.reset = async () => { store.state = blank(); await U.idb.clear('files'); await U.idb.clear('traces'); U.storage.del(KEY); store.save(); };

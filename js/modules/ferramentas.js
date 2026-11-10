@@ -41,13 +41,62 @@
     'Durante a medição': ['Traço sem ruído excessivo (tempo de média adequado)', 'Fim de fibra compatível com a distância do OZmap', 'Eventos conferidos com as caixas/CEOs do projeto', 'Medição repetida em 1550 nm quando houver suspeita de curvatura', 'Medição bidirecional quando houver ganho aparente'],
     'Depois da medição': ['Arquivo .SOR salvo e copiado', 'Teste importado no FiberControl', 'Fotos de caixas/CEOs anexadas', 'Tampas e protetores recolocados', 'Observações de campo registradas']
   };
+  /* Sugestões de materiais (editáveis: o técnico pode digitar qualquer item) */
+  const MAT_SUG = {
+    'Construção': ['Cabo óptico AS80 12FO', 'Cabo óptico AS80 24FO', 'Cabo óptico AS80 48FO', 'Cabo óptico AS120 72FO', 'Cabo drop', 'CEO (caixa de emenda)', 'CTO 8 portas', 'CTO 16 portas', 'Bandeja de emenda', 'Tubete de proteção de fusão', 'Alça pré-formada', 'Conjunto de ancoragem', 'Conjunto de suspensão', 'Abraçadeira BAP', 'Suporte/olhal', 'Fita de aço inox', 'Fecho de aço inox', 'Plaqueta de identificação', 'Reserva técnica (suporte)', 'Duto/subduto', 'Caixa de passagem'],
+    'Ativação': ['DIO 24FO', 'DIO 48FO', 'DIO 144FO', 'Cordão óptico SC/APC', 'Cordão óptico SC/UPC', 'Cordão óptico LC/UPC', 'Pigtail SC/APC', 'Pigtail LC/UPC', 'Adaptador óptico', 'Splitter PLC 1:8', 'Splitter PLC 1:16', 'Módulo SFP 1G', 'Módulo SFP+ 10G', 'Atenuador óptico', 'Switch/roteador', 'ONU/CPE', 'Patch cord de rede', 'Etiquetas de identificação']
+  };
+  const UNID = ['un', 'm', 'km', 'pç', 'cx', 'rolo', 'kit', 'par'];
+  let ckTab = 'materiais';
   function renderCheck(el, params) {
     const ts = store.state.trechos;
     const sel = params.trechoId || (ts[0] || {}).id;
-    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Campo</span><h1>Checklist de campo</h1><p class="muted small">Verificação antes, durante e depois de cada medição. Funciona sem internet.</p></div></div>
-      <section class="panel"><div class="filters">${ui.field('Trecho', `<select id="ckt">${ts.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${U.esc((store.get('links', t.linkId) || {}).nome)} / ${U.esc(t.nome)}${store.state.checklists[t.id] && store.state.checklists[t.id].done ? ' ✓' : ''}</option>`).join('')}</select>`, '', 'wide')}</div></section><div id="ckb"></div>`;
+    if (params.tab) ckTab = params.tab;
+    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Campo</span><h1>Checklist de campo</h1><p class="muted small">Materiais usados e inspeção antes, durante e depois de cada medição. Funciona sem internet.</p></div></div>
+      <section class="panel"><div class="filters">${ui.field('Trecho', `<select id="ckt">${ts.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${U.esc((store.get('links', t.linkId) || {}).nome)} / ${U.esc(t.nome)}${store.state.checklists[t.id] && store.state.checklists[t.id].done ? ' ✓' : ''}${(t.materiais || []).length ? ' · ' + t.materiais.length + ' materiais' : ''}</option>`).join('')}</select>`, '', 'wide')}</div></section>
+      <div class="tabs">${[['materiais', 'Materiais'], ['inspecao', 'Inspeção']].map(([k, l]) => `<button class="${ckTab === k ? 'on' : ''}" data-ck="${k}">${l}</button>`).join('')}</div><div id="ckb"></div>`;
+    U.$$('[data-ck]', el).forEach(b => b.onclick = () => FC.go('checklist', { trechoId: sel, tab: b.dataset.ck }));
     if (!sel) { U.$('#ckb').innerHTML = '<section class="panel"><p class="muted">Cadastre um trecho primeiro.</p></section>'; return; }
-    U.$('#ckt').onchange = (e) => FC.go('checklist', { trechoId: e.target.value });
+    U.$('#ckt').onchange = (e) => FC.go('checklist', { trechoId: e.target.value, tab: ckTab });
+    (ckTab === 'materiais' ? renderMateriais : renderInspecao)(store.get('trechos', sel));
+  }
+
+  /* ----- Aba Materiais: Construção e Ativação, com quantidade ----- */
+  function renderMateriais(t) {
+    const box = U.$('#ckb'), can = store.can('enlace.editar'), l = store.get('links', t.linkId) || {};
+    const mats = t.materiais || [];
+    const salvar = (msg) => { t.materiais = mats; store.upsert('trechos', t, msg); renderMateriais(t); };
+    const secao = (cat) => {
+      const itens = mats.filter(m => m.categoria === cat);
+      return `<section class="panel"><header><div><h3>${cat}</h3><span class="sub">${itens.length} item(ns) · ${U.num(U.sum(itens, m => m.quantidade), 0)} unidades no total</span></div></header>
+        ${can ? `<form class="mt-add" data-cat="${cat}"><input name="material" list="dl-mat-${cat === 'Construção' ? 'c' : 'a'}" placeholder="Material" required aria-label="Material de ${cat}">
+          <input name="quantidade" type="number" min="0" step="any" placeholder="Qtd." required aria-label="Quantidade"><select name="unidade" aria-label="Unidade">${UNID.map(u => `<option>${u}</option>`).join('')}</select>
+          <input name="obs" placeholder="Observação (opcional)" aria-label="Observação"><button class="btn primary" type="submit">${ui.icon('plus')}Adicionar</button></form>
+          <datalist id="dl-mat-${cat === 'Construção' ? 'c' : 'a'}">${MAT_SUG[cat].map(m => `<option value="${U.esc(m)}">`).join('')}</datalist>` : ''}
+        <div class="table-scroll"><table class="tbl"><thead><tr><th>Material</th><th class="num">Quantidade</th><th>Unid.</th><th>Observação</th><th>Registrado por</th><th></th></tr></thead><tbody>
+        ${itens.map(m => `<tr><td><b>${U.esc(m.material)}</b></td><td class="num">${can ? `<input type="number" min="0" step="any" data-mq="${m.id}" value="${m.quantidade}" style="width:90px;text-align:right" aria-label="Quantidade de ${U.esc(m.material)}">` : U.num(m.quantidade, 2)}</td><td>${U.esc(m.unidade)}</td><td class="small">${U.esc(m.obs || '')}</td><td class="tiny muted">${U.esc(m.por || '')}<br>${U.dt(m.em)}</td><td>${can ? `<button class="btn sm ghost" data-mdel="${m.id}" title="Remover" aria-label="Remover ${U.esc(m.material)}">${ui.icon('trash')}</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="6" class="empty">Nenhum material de ${cat.toLowerCase()} registrado.</td></tr>`}
+        </tbody></table></div></section>`;
+    };
+    box.innerHTML = `<section class="panel"><header><div><h3>Materiais — ${U.esc(l.nome || '')} / ${U.esc(t.nome)}</h3><span class="sub">Registre o que foi usado na construção da rede e na ativação do enlace.</span></div>
+      <div class="btn-row"><button class="btn sm" id="mtX">${ui.icon('download')}Exportar XLSX</button><button class="btn sm" id="mtAll">${ui.icon('download')}Todos os trechos (XLSX)</button></div></header></section>
+      ${secao('Construção')}${secao('Ativação')}`;
+    U.$$('.mt-add', box).forEach(f => f.addEventListener('submit', (e) => {
+      e.preventDefault(); const d = ui.formData(f), q = U.parseNum(d.quantidade);
+      if (!d.material.trim() || q == null || q < 0) return ui.toast('Informe o material e a quantidade.', 'err');
+      mats.push({ id: U.uid('mat'), categoria: f.dataset.cat, material: d.material.trim(), quantidade: q, unidade: d.unidade, obs: d.obs.trim(), por: store.user().nome, em: U.now() });
+      salvar(`Material (${f.dataset.cat}): ${d.material.trim()} × ${q} ${d.unidade} em ${t.nome}`);
+      const nf = U.$(`.mt-add[data-cat="${f.dataset.cat}"] [name=material]`); nf && nf.focus();
+    }));
+    U.$$('[data-mq]', box).forEach(i => i.onchange = () => { const m = mats.find(x => x.id === i.dataset.mq), q = U.parseNum(i.value); if (!m || q == null || q < 0) return; const old = m.quantidade; m.quantidade = q; salvar(`Quantidade de ${m.material}: ${old} → ${q} ${m.unidade}`); });
+    U.$$('[data-mdel]', box).forEach(b => b.onclick = async () => { const m = mats.find(x => x.id === b.dataset.mdel); if (!m || !(await ui.confirm('Remover material', `Remover ${m.material} (${m.quantidade} ${m.unidade})?`, 'Remover', true))) return; mats.splice(mats.indexOf(m), 1); salvar(`Material removido: ${m.material}`); });
+    const linha = (tr, m) => { const lk = store.get('links', tr.linkId) || {}; return { Enlace: lk.nome, Trecho: tr.nome, Categoria: m.categoria, Material: m.material, Quantidade: m.quantidade, Unidade: m.unidade, Observação: m.obs || '', 'Registrado por': m.por, Data: U.dt(m.em) }; };
+    U.$('#mtX').onclick = () => FC.reports.exportRows(mats.map(m => linha(t, m)), ('materiais-' + (l.nome || '') + '-' + t.nome).replace(/[^\w-]+/g, '-').toLowerCase(), 'xlsx', 'Materiais');
+    U.$('#mtAll').onclick = () => FC.reports.exportRows(store.state.trechos.flatMap(tr => (tr.materiais || []).map(m => linha(tr, m))), 'materiais-todos-os-trechos', 'xlsx', 'Materiais');
+  }
+
+  /* ----- Aba Inspeção (página original do checklist) ----- */
+  function renderInspecao(t) {
+    const sel = t.id;
     const ck = store.state.checklists[sel] = store.state.checklists[sel] || { items: {}, done: false };
     const total = Object.values(CHECK).flat().length;
     const draw = () => {
@@ -56,7 +105,7 @@
         <div class="grid g3">${Object.entries(CHECK).map(([fase, items]) => `<div class="panel" style="background:var(--surface-2)"><h4>${fase}</h4>${items.map((it, i) => { const k = fase + '|' + i; return `<label class="check" style="padding:6px 0"><input type="checkbox" data-k="${U.esc(k)}" ${ck.items[k] ? 'checked' : ''}> ${U.esc(it)}</label>`; }).join('')}</div>`).join('')}</div>
         <div class="btn-row"><button class="btn primary" id="ckd" ${n === total ? '' : 'disabled'}>${ui.icon('check')}Concluir checklist</button><button class="btn ghost" id="ckr">Reiniciar</button><button class="btn" id="cki">${ui.icon('upload')}Importar teste deste trecho</button></div></section>`;
       U.$$('[data-k]').forEach(c => c.onchange = () => { ck.items[c.dataset.k] = c.checked; if (!c.checked) ck.done = false; store.save(); draw(); });
-      U.$('#ckd').onclick = () => { Object.assign(ck, { done: true, by: store.user().nome, at: U.now() }); store.audit('concluiu', 'checklist', sel, 'Checklist de campo ' + (store.get('trechos', sel) || {}).nome); store.save(); ui.toast('Checklist concluído e registrado.', 'ok'); draw(); };
+      U.$('#ckd').onclick = () => { Object.assign(ck, { done: true, by: store.user().nome, at: U.now() }); store.audit('concluiu', 'checklist', sel, 'Checklist de campo ' + t.nome); store.save(); ui.toast('Checklist concluído e registrado.', 'ok'); draw(); };
       U.$('#ckr').onclick = () => { ck.items = {}; ck.done = false; store.save(); draw(); };
       U.$('#cki').onclick = () => FC.go('otdr', { trechoId: sel, tab: 'individual' });
     };

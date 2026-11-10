@@ -1,4 +1,4 @@
-/* Módulos 5 e 6 — Fibras e capacidade (coluna 48FO RESTANTE) e Detector de entronques */
+/* Módulo 5 — Fibras e capacidade (coluna 48FO RESTANTE) */
 (function (FC) {
   'use strict';
   const U = FC.util, ui = FC.ui, C = FC.calc, store = FC.store, I = FC.importers;
@@ -12,7 +12,7 @@
     if (!sheets.length) return ui.toast('Planilha vazia.', 'err');
     const col = store.state.settings.fibers.column;
     let si = 0;
-    const fields = [['enlace', 'Enlace'], ['trecho', 'Trecho'], ['cabo', 'Identificação do cabo'], ['ozmap', 'Distância OZmap'], ['restante', col], ['capacidade', 'Capacidade do cabo (FO)'], ['conectado', 'Cabo conectado (FO)'], ['caixa', 'Caixa / local'], ['tipo', 'Tipo de trecho']];
+    const fields = [['enlace', 'Enlace'], ['trecho', 'Trecho'], ['cabo', 'Identificação do cabo'], ['ozmap', 'Distância OZmap'], ['restante', col], ['capacidade', 'Capacidade do cabo (FO)'], ['caixa', 'Caixa / local'], ['tipo', 'Tipo de trecho']];
     const body = () => { const sh = sheets[si]; const g = I.guessColumns(sh.headers, Object.assign({}, I.specOZmap, { restante: [new RegExp(U.norm(col).replace(/[()]/g, '.'))].concat(I.specOZmap.restante) })); return `
       ${sheets.length > 1 ? ui.field('Aba', ui.select('sheet', sheets.map((s, i) => [i, s.name + ' (' + s.rows.length + ' linhas)']), si)) : ''}
       <p class="small muted">${sh.rows.length} linhas · confira o mapeamento de colunas (sugerido automaticamente).</p>
@@ -42,7 +42,6 @@
           if (mp.ozmap && r[mp.ozmap] !== '') t.ozmapM = I.toMeters(r[mp.ozmap], mp.ozmap);
           if (mp.restante && r[mp.restante] !== '') t.fibrasRestantes = U.parseNum(r[mp.restante]);
           if (mp.capacidade && r[mp.capacidade] !== '') t.caboFO = U.parseNum(String(r[mp.capacidade]).replace(/fo/i, ''));
-          if (mp.conectado && r[mp.conectado] !== '') t.caboConectadoFO = U.parseNum(String(r[mp.conectado]).replace(/fo/i, ''));
           if (mp.caixa && r[mp.caixa] !== '') t.caixa = String(r[mp.caixa]);
           if (mp.tipo && r[mp.tipo]) { const tp = store.state.settings.trechoTypes.find(x => U.norm(x) === U.norm(r[mp.tipo])); if (tp) t.tipo = tp; }
           if (old != null && old !== t.ozmapM) FC.snapshotLink(link, `Planilha OZmap ${f.name}: ${t.nome} ${old} → ${t.ozmapM} m`);
@@ -94,29 +93,5 @@
     U.$('#xf').onclick = () => FC.reports.capacityReport('xlsx');
   }
 
-  function renderEntronques(el) {
-    const S = store.state.settings.fibers;
-    const list = C.entronques();
-    const crit = list.filter(e => e.critico || e.conectado <= 12);
-    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Detector</span><h1>Entronques</h1><p class="muted small">Trechos que se conectam a cabos de menor capacidade — informados no cadastro ou detectados pela sequência dos trechos.</p></div></div>
-      <section class="kpis">${S.capacities.map(c => `<div class="kpi"><span class="l">Conexões para ${c}FO</span><span class="v">${list.filter(e => e.conectado === c).length}</span></div>`).filter((x, i) => [12, 24, 36, 48].includes(S.capacities[i]) || list.some(e => e.conectado === S.capacities[i])).join('')}<div class="kpi warn"><span class="l">Pontos de atenção</span><span class="v">${crit.length}</span></div></section>
-      <section class="panel"><header><h3>Painel de atenção</h3><span class="sub">Gargalos de capacidade nos entronques</span></header>
-        ${crit.length ? `<div class="grid g-auto">${crit.map(e => `<div class="panel" style="gap:6px;border-color:${e.level === 'vermelho' ? 'var(--bad)' : 'var(--warn)'}"><span class="eyebrow">${U.esc(e.link.nome)}</span><b>${U.esc(e.t.nome)} · ${U.esc(e.local || 'local não informado')}</b><span>${e.principal}FO → <b>${e.conectado}FO</b> ${ui.capBadge(e.level)}</span><ul class="list-plain small">${e.gargalos.map(g => `<li>${U.esc(g)}</li>`).join('')}</ul><button class="btn sm" data-go="${e.t.id}">Abrir trecho</button></div>`).join('')}</div>` : `<div class="note ok">${ui.icon('check')}<div>Nenhum entronque crítico.</div></div>`}</section>
-      <section class="panel" id="et"></section>`;
-    ui.table(U.$('#et'), {
-      rows: list, sortKey: 'rest', sortDir: 'asc', onRow: e => FC.go('enlaces', { trechoId: e.t.id }), empty: 'Nenhum entronque. Informe “Cabo conectado (FO)” no trecho ou importe da planilha OZmap.',
-      rowClass: e => e.level === 'vermelho' ? 'row-bad' : e.level === 'amarelo' ? 'row-warn' : '',
-      columns: [
-        { key: 'id', label: 'Trecho', sort: e => e.link.nome + e.t.nome, render: e => `${U.esc(e.link.nome)} / <b>${U.esc(e.t.nome)}</b>${ui.demo(e.t)}` },
-        { key: 'principal', label: 'Cabo principal', num: true, render: e => e.principal + 'FO' }, { key: 'conectado', label: 'Cabo conectado', num: true, render: e => `<b>${e.conectado}FO</b>` },
-        { key: 'rest', label: 'Fibras restantes', num: true, render: e => e.rest == null ? '—' : e.rest },
-        { key: 'local', label: 'Localização', render: e => U.esc(e.local || '—') }, { key: 'origem', label: 'Identificação', render: e => `<span class="tag">${U.esc(e.origem)}</span>` },
-        { key: 'g', label: 'Possíveis gargalos', sortable: false, render: e => `<span class="small">${e.gargalos.map(U.esc).join('<br>')}</span>` }, { key: 'level', label: 'Situação', render: e => ui.capBadge(e.level) }
-      ]
-    });
-    U.$$('[data-go]', el).forEach(b => b.onclick = () => FC.go('enlaces', { trechoId: b.dataset.go }));
-  }
-
   FC.registerModule({ id: 'fibras', order: 5, title: 'Fibras e Capacidade', icon: 'fiber', group: 'main', field: true, render: renderFibras });
-  FC.registerModule({ id: 'entronques', order: 6, title: 'Entronques', icon: 'junction', group: 'main', field: false, render: renderEntronques });
 })(window.FC = window.FC || {});

@@ -179,13 +179,13 @@ input[type=color] { padding: 2px; width: 44px }
 .activity .avatar { width: 28px; height: 28px; font-size: .68rem }
 
 /* ---------- Modal / toasts ---------- */
-.modal-wrap { position: fixed; inset: 0; background: rgba(0, 20, 35, .55); z-index: 100; display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); animation: fade .15s }
+.modal-wrap { position: fixed; inset: 0; background: rgba(0, 20, 35, .55); z-index: 1500; display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); animation: fade .15s }
 .modal { background: var(--surface); border-radius: 14px; width: min(620px, 100%); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.35); min-width: 0 }
 .modal.wide { width: min(1040px, 100%) }
 .modal header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); gap: 10px }
 .modal .modal-body { padding: 18px; overflow: auto; display: flex; flex-direction: column; gap: 14px; min-width: 0 }
 .modal footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); flex-wrap: wrap }
-#toasts { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; z-index: 200; max-width: min(380px, calc(100vw - 32px)) }
+#toasts { z-index: 1600 !important; position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; z-index: 200; max-width: min(380px, calc(100vw - 32px)) }
 .toast { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px; background: var(--ink); color: var(--bg); box-shadow: var(--shadow); font-size: .86rem; animation: up .2s }
 .toast.ok .ic { color: #34c58f } .toast.err .ic { color: #ff8a80 } .toast.warn .ic { color: #f0b429 }
 .toast.out { opacity: 0; transform: translateY(6px); transition: .25s }
@@ -222,7 +222,7 @@ body.field .fieldbar { display: grid; grid-template-columns: repeat(4, 1fr); pos
 .fieldbar button .ic { width: 24px; height: 24px } .fieldbar button.main-act { background: var(--orange); color: #fff }
 
 /* ---------- Mapa ---------- */
-.map { height: 520px; border-radius: var(--r); border: 1px solid var(--line); overflow: hidden; background: var(--surface-2) }
+.map { height: 520px; border-radius: var(--r); border: 1px solid var(--line); overflow: hidden; background: var(--surface-2); isolation: isolate; position: relative; z-index: 0 }
 .leaflet-container { font: inherit }
 
 /* ---------- Responsivo ---------- */
@@ -267,3 +267,15 @@ body.field .fieldbar { display: grid; grid-template-columns: repeat(4, 1fr); pos
 .leaflet-popup-close-button{position:absolute;top:0;right:0;width:24px;height:24px;font:16px/24px sans-serif;color:var(--fg-3);text-decoration:none;text-align:center}
 .leaflet-tooltip{position:absolute;padding:4px 8px;background:var(--surface);border:1px solid var(--line);border-radius:4px;color:var(--fg);white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.3);font-size:12px}
 .leaflet-interactive{cursor:pointer}.leaflet-zoom-animated{transform-origin:0 0}.leaflet-grab{cursor:grab}
+
+/* Checklist › Materiais */
+.mt-add { display: grid; grid-template-columns: minmax(0, 2fr) 100px 90px minmax(0, 1.5fr) auto; gap: 8px; align-items: center }
+@media (max-width: 760px) { .mt-add { grid-template-columns: minmax(0, 1fr) 90px 80px } .mt-add input[name=obs] { grid-column: 1 / -1 } .mt-add button { grid-column: 1 / -1 } }
+
+/* Importação por foto (OCR) */
+.ocr-prog { position: fixed; inset: 0; z-index: 1550; display: grid; place-items: center; background: rgba(0, 20, 35, .45) }
+.ocr-prog .panel { width: min(420px, calc(100vw - 32px)); display: grid; gap: 8px }
+.ocr-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr); gap: 14px; align-items: start }
+.ocr-img { margin: 0; position: sticky; top: 0 } .ocr-img img { width: 100%; max-height: 460px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: #000 }
+#itev input { min-height: 32px; padding: 4px 6px } #itev input[type=checkbox] { min-height: auto }
+@media (max-width: 760px) { .ocr-grid { grid-template-columns: minmax(0, 1fr) } .ocr-img { position: static } }

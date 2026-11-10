@@ -47,11 +47,10 @@
         if (li === 4 && k === 2) { conectado = 12; }
         if (li === 1 && k === 1) { conectado = 24; }
         const t = {
-          id: U.uid('tr_'), linkId: link.id, ordem: k + 1, nome: `T${String(k + 1).padStart(2, '0')}`, tipo, ozmapM: oz, caboFO: cabo, caboConectadoFO: conectado,
+          id: U.uid('tr_'), linkId: link.id, ordem: k + 1, nome: `T${String(k + 1).padStart(2, '0')}`, tipo, ozmapM: oz, caboFO: cabo,
           fibrasRestantes: [14, 22, 6, 0, 3, 30, 18, 9, 2, 26, 12, 4, 20, 8, 16, 1, 24][(li * 4 + k) % 17], emendas: 2 + Math.floor(r() * 4), conectores: 2,
           caixa: `CEO-${caboId.split('-')[1]}-${String(li * 10 + k + 1).padStart(3, '0')}`, coords: pts, wavelength: 1550, demo: true, obs: ''
         };
-        if (conectado) t.entronqueLocal = t.caixa + ' (derivação)';
         st.trechos.push(t);
 
         // medições (algumas pendentes)

@@ -63,7 +63,6 @@
       const div = cmp.filter(x => x.c.status === 'vermelho').length;
       const bud = trechos.filter(t => C.budget(t).status === 'acima').length;
       const cap = trechos.filter(t => ['amarelo', 'vermelho'].includes(C.capacity(t).status)).length;
-      const entr = C.entronques().filter(e => links.includes(e.link)).length;
       const mk = new Date().toISOString().slice(0, 7);
       const mes = meas.filter(m => (m.data || '').startsWith(mk)).length;
       const pct = trechos.length ? cert / trechos.length * 100 : 0;
@@ -76,7 +75,6 @@
         K(div, 'Com divergência', 'Fora da tolerância OZmap', div ? 'bad' : '', 'comparativo'),
         K(bud, 'Perda acima do orçamento', 'Medido > previsto + tolerância', bud ? 'bad' : '', 'otdr'),
         K(cap, 'Poucas fibras livres', `Mínimo configurado: ${FC.store.state.settings.fibers.min}`, cap ? 'warn' : '', 'fibras'),
-        K(entr, 'Entronques', 'Conexões com cabos menores', entr ? 'warn' : '', 'entronques'),
         K(mes, 'Medições no mês', new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }), '', 'historico')
       ].join('');
       U.$$('#kpis [data-go]').forEach(k => { k.onclick = () => FC.go(k.dataset.go); k.onkeydown = (e) => e.key === 'Enter' && FC.go(k.dataset.go); });

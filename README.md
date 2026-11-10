@@ -25,7 +25,7 @@ js/core/
   config.js                parâmetros padrão (todos editáveis), perfis, permissões, status das funções
   sor-parser.js            leitor binário SR-4731 v1/v2 (UMD: navegador, Node e Deno)
   store.js                 estado, persistência local/Supabase, auditoria, fila offline
-  calc.js                  cálculos: comparativo, link budget, análise OTDR, fator de correção, capacidade, entronques, certificação, histórico
+  calc.js                  cálculos: comparativo, link budget, análise OTDR, capacidade, potência, certificação, histórico
   importers.js             SOR, PDF (pdf.js), CSV/XLSX (SheetJS), imagem (OCR Tesseract), identificação automática do enlace
   ui.js / reports.js       componentes, gráficos, PDF/XLSX
   seed.js                  dados de demonstração

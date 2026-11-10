@@ -34,7 +34,7 @@
     const tol = C.tolFor(trecho, link);
     const oz = trecho.ozmapM != null && trecho.ozmapM !== '' ? +trecho.ozmapM : null;
     const otdr = C.otdrNet(m);
-    const fac = S().tolerance.useApprovedFactor && S().correction.approved[trecho.tipo] ? S().correction.approved[trecho.tipo].factor : 1;
+    const fac = 1;
     const base = oz != null ? oz * fac : null;
     if (oz == null || otdr == null || !oz) return { otdr, ozmap: oz, base, factor: fac, diffM: null, diffPct: null, status: 'sem-dados', tol, m };
     const diffM = otdr - base;
@@ -160,34 +160,7 @@
   };
   C.resultLabel = { excelente: 'Excelente', ok: 'Dentro dos parâmetros', atencao: 'Atenção', reprovado: 'Reprovado', insuficiente: 'Dados insuficientes' };
 
-  /* ---------------- Fator de correção ---------------- */
-  C.correctionStats = (filterFn = () => true) => {
-    const rows = [];
-    FC.store.state.trechos.filter(filterFn).forEach(t => {
-      const m = C.latest(t.id); const L = C.otdrNet(m);
-      if (L && t.ozmapM > 0) rows.push({ t, ratio: L / t.ozmapM, otdr: L });
-    });
-    const by = U.groupBy(rows, r => r.t.tipo || 'Sem tipo');
-    return Object.entries(by).map(([tipo, rs]) => {
-      const ratios = rs.map(r => r.ratio);
-      const mean = U.avg(ratios), sd = U.stdev(ratios);
-      const kept = rs.length >= 4 ? ratios.filter(x => Math.abs(x - mean) <= 2 * sd) : ratios; // remove valores atípicos (> 2σ)
-      const factor = U.avg(kept);
-      return { tipo, samples: rs.length, used: kept.length, outliers: rs.length - kept.length, mean, median: U.median(ratios), sd, factor, sobraPct: (factor - 1) * 100, rows: rs };
-    }).sort((a, b) => a.tipo.localeCompare(b.tipo));
-  };
-  /** Estimativa do comprimento físico a partir do traçado e dos elementos de campo */
-  C.estimatePhysical = ({ ozmapM, reservas = 0, reservaM = 0, subidas = 0, subidaM = 0, curvasPct = 0, desvioPct = 0, eflPct = 0 }) => {
-    if (!ozmapM) return null;
-    const base = +ozmapM;
-    const curvas = base * curvasPct / 100, desvios = base * desvioPct / 100;
-    const res = reservas * reservaM, sub = subidas * subidaM;
-    const cable = base + curvas + desvios + res + sub;
-    const fiber = cable * (1 + eflPct / 100);
-    return { base, curvas, desvios, reservas: res, subidas: sub, cable, efl: fiber - cable, fiber, factor: fiber / base };
-  };
-
-  /* ---------------- Capacidade / entronques ---------------- */
+  /* ---------------- Capacidade ---------------- */
   C.capacity = (t) => {
     const min = +S().fibers.min;
     const ref = +S().fibers.reference;
@@ -195,39 +168,6 @@
     const status = rest == null ? 'sem-dados' : rest <= 0 ? 'vermelho' : rest <= min ? 'amarelo' : 'verde';
     return { rest, status, total: t.caboFO || null, semRef: t.caboFO != null && +t.caboFO !== ref, usoPct: t.caboFO && rest != null ? (1 - rest / t.caboFO) * 100 : null };
   };
-  C.entronques = () => {
-    const out = [];
-    const st = FC.store.state;
-    st.trechos.forEach(t => {
-      const link = FC.store.get('links', t.linkId);
-      if (t.caboConectadoFO && t.caboFO && +t.caboConectadoFO < +t.caboFO) {
-        out.push({ t, link, principal: +t.caboFO, conectado: +t.caboConectadoFO, local: t.entronqueLocal || t.caixa || '', origem: 'Cadastro do trecho' });
-      }
-    });
-    // Detecção automática: redução de capacidade entre trechos consecutivos do mesmo enlace
-    st.links.forEach(l => {
-      const ts = st.trechos.filter(t => t.linkId === l.id).sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
-      for (let i = 1; i < ts.length; i++) {
-        const a = ts[i - 1], b = ts[i];
-        if (a.caboFO && b.caboFO && +b.caboFO < +a.caboFO && !out.some(o => o.t.id === b.id || o.t.id === a.id)) {
-          out.push({ t: b, link: l, principal: +a.caboFO, conectado: +b.caboFO, local: b.caixa || ('Entre ' + a.nome + ' e ' + b.nome), origem: 'Detectado na sequência' });
-        }
-      }
-    });
-    const min = +S().fibers.min;
-    out.forEach(o => {
-      const cap = C.capacity(o.t);
-      o.rest = cap.rest;
-      o.gargalos = [];
-      o.gargalos.push(`Redução de ${o.principal}FO para ${o.conectado}FO (${Math.round((1 - o.conectado / o.principal) * 100)}% menos capacidade)`);
-      if (cap.rest != null && cap.rest <= 0) o.gargalos.push('Sem fibras livres no cabo conectado');
-      else if (cap.rest != null && cap.rest <= min) o.gargalos.push(`Somente ${cap.rest} fibra(s) livre(s)`);
-      o.critico = cap.rest != null && cap.rest <= min;
-      o.level = cap.rest != null && cap.rest <= 0 ? 'vermelho' : o.critico ? 'amarelo' : 'verde';
-    });
-    return out;
-  };
-
   /* ---------------- Status e certificação ---------------- */
   C.trechoStatus = (t) => {
     if (t.certificacao && t.certificacao.status === 'certificado') return 'certificado';

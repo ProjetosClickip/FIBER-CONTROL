@@ -9,8 +9,29 @@
   const U = FC.util, ui = FC.ui, store = FC.store, C = FC.calc;
   const CAT = 'Rede OZmap (KMZ)';
   const M = { rede: null, g: null, map: null, layers: {}, codeOf: {}, tool: { mid: '', a: '', b: '', routes: [], ri: 0, fator: '', lance: null, showAll: false, sel: [] }, hl: { items: [], evs: [] }, R: null };
-  const FO_COLORS = [[6, '#8a96a3', '≤ 6FO'], [12, '#0f9d6b', '12FO'], [24, '#2a6fb5', '24FO'], [36, '#7b5cff', '36FO'], [48, '#fe6218', '48FO'], [72, '#d7372b', '72FO'], [999, '#002947', '≥ 144FO']];
-  const foColor = (fo) => (FO_COLORS.find(([m]) => (fo || 0) <= m) || FO_COLORS[FO_COLORS.length - 1])[1];
+  // Padrão visual ClickIP dos cabos (seguir à risca)
+  const FO_COLORS = [[6, '#e10600', '06FO'], [12, '#0047ff', '12FO'], [24, '#ff3fa4', '24FO'], [36, '#8c8c8c', '36FO'], [48, '#000000', '48FO'], [72, '#7b3f00', '72FO'], [999, '#ffffff', '144FO']];
+  const SEM_FO = '#b8c2cc';
+  const foBucket = (fo) => fo ? (FO_COLORS.find(([m]) => fo <= m) || FO_COLORS[FO_COLORS.length - 1]) : null;
+  const foColor = (fo) => (foBucket(fo) || [0, SEM_FO])[1];
+  /** Remove caixas "soltas": só ficam as que têm cabo passando a até 12 m */
+  function filtrarCaixas(data, maxM = 12) {
+    if (data.filtrado) return data;
+    const cell = 0.0005, grid = new Map(), key = (a, b) => a + ':' + b;
+    data.cables.forEach(c => { for (let i = 1; i < c.coords.length; i++) { const p = c.coords[i - 1], q = c.coords[i];
+      const x0 = Math.floor(Math.min(p[0], q[0]) / cell), x1 = Math.floor(Math.max(p[0], q[0]) / cell), y0 = Math.floor(Math.min(p[1], q[1]) / cell), y1 = Math.floor(Math.max(p[1], q[1]) / cell);
+      for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) { const k = key(x, y); (grid.get(k) || grid.set(k, []).get(k)).push([p, q]); } } });
+    const near = (pt) => { const cx = Math.floor(pt[0] / cell), cy = Math.floor(pt[1] / cell), kx = Math.cos(pt[0] * Math.PI / 180) * 111320, ky = 110540;
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const [p, q] of (grid.get(key(cx + i, cy + j)) || [])) {
+        const ax = (p[1] - pt[1]) * kx, ay = (p[0] - pt[0]) * ky, bx = (q[1] - pt[1]) * kx, by = (q[0] - pt[0]) * ky, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+        const t = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+        if (Math.hypot(ax + t * dx, ay + t * dy) <= maxM) return true; }
+      return false; };
+    const antes = data.boxes.length;
+    data.boxes = data.boxes.filter(b => near(b.pt));
+    data.caixasRemovidas = antes - data.boxes.length; data.filtrado = true;
+    return data;
+  }
   const BOX_COLORS = { CEO: '#002947', CEOS: '#01a09c', CTO: '#0f9d6b', CDO: '#7b5cff' };
   const boxColor = (b) => BOX_COLORS[(b.categoria || '').toUpperCase()] || '#8a96a3';
   const projetado = (estado) => /projeto|n[aã]o implantad/i.test(estado || '');
@@ -27,13 +48,14 @@
     return data;
   }
   async function setRede(data, arquivo, em) {
+    filtrarCaixas(data);
     M.rede = { data, arquivo, em: em || U.now() }; M.g = null;
     await U.idb.put('traces', 'rede-ozmap', M.rede);
   }
   async function loadSaved() {
     if (M.rede) return M.rede;
     const r = await U.idb.get('traces', 'rede-ozmap');
-    if (r) { M.rede = r; return r; }
+    if (r) { if (!r.data.filtrado) { filtrarCaixas(r.data); await U.idb.put('traces', 'rede-ozmap', r); } M.rede = r; return r; }
     // rede enviada por alguém da equipe (anexo no Supabase Storage)
     const att = store.state.attachments.filter(a => a.categoria === CAT).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0];
     if (att) { const blob = await store.getFile(att); if (blob) { await setRede(await parseFile(blob, att.nome), att.nome, att.createdAt); return M.rede; } }
@@ -77,9 +99,10 @@
       U.$('#mrSide').innerHTML = codesHTML(); bindCodes(); return;
     }
     const d = rede.data;
-    U.$('#mrInfo').innerHTML = `${U.esc(rede.arquivo)} · ${d.pops.length} POPs · ${d.boxes.length} caixas · ${d.cables.length} cabos (${U.km(U.sum(d.cables, c => c.len), 1)} desenhados) · carregado em ${U.dt(rede.em)}`;
+    U.$('#mrInfo').innerHTML = `${U.esc(rede.arquivo)} · ${d.pops.length} POPs · ${d.boxes.length} caixas${d.caixasRemovidas ? ` (${d.caixasRemovidas} sem cabo ocultadas)` : ''} · ${d.cables.length} cabos (${U.km(U.sum(d.cables, c => c.len), 1)} desenhados) · carregado em ${U.dt(rede.em)}`;
     drawMap(d);
     side();
+    if ((M.tool.popSel || []).length) drawPopSel(false);
   }
 
   function drawMap(d) {
@@ -93,12 +116,14 @@
     FO_COLORS.forEach(([, , lab]) => L_.cabos[lab] = L.layerGroup().addTo(map));
     // cabos: destaque ao passar o mouse, painel completo ao clicar
     d.cables.forEach((c, ci) => {
-      const lab = (FO_COLORS.find(([m]) => (c.fo || 0) <= m) || FO_COLORS[FO_COLORS.length - 1])[2];
-      const w = c.fo >= 48 ? 3.5 : c.fo >= 24 ? 2.6 : 1.8;
-      const pl = L.polyline(c.coords, { color: foColor(c.fo), weight: w, opacity: .9, dashArray: projetado(c.estado) ? '6 6' : null });
-      pl.on('mouseover', () => { pl.setStyle({ weight: w + 4, opacity: 1 }); pl.bringToFront(); });
-      pl.on('mouseout', () => pl.setStyle({ weight: w, opacity: .9 }));
-      pl.bindTooltip(`${U.esc(c.name)} · ${c.fo || '?'}FO`, { sticky: true, className: 'mr-tip' });
+      const bk = foBucket(c.fo), lab = bk ? bk[2] : 'Sem capacidade';
+      L_.cabos[lab] = L_.cabos[lab] || L.layerGroup().addTo(map);
+      const w = c.fo >= 48 ? 3.5 : c.fo >= 24 ? 2.8 : 2.2, cor = foColor(c.fo), branco = cor === '#ffffff', dash = projetado(c.estado) ? '6 6' : (!bk ? '2 5' : null);
+      if (branco) L.polyline(c.coords, { color: '#3a3a3a', weight: w + 2.2, opacity: .9, dashArray: dash, interactive: false }).addTo(L_.cabos[lab]);
+      const pl = L.polyline(c.coords, { color: cor, weight: w, opacity: 1, dashArray: dash });
+      pl.on('mouseover', () => { pl.setStyle({ weight: w + 4 }); pl.bringToFront(); });
+      pl.on('mouseout', () => pl.setStyle({ weight: w }));
+      pl.bindTooltip(`${U.esc(c.name)} · ${c.fo ? c.fo + 'FO' : 'sem capacidade'}`, { sticky: true, className: 'mr-tip' });
       pl.bindPopup(() => cablePopup(ci), { maxWidth: 320 });
       pl.addTo(L_.cabos[lab]);
     });
@@ -117,6 +142,13 @@
       L.circleMarker(p.pt, { radius: 8, color: '#002947', weight: 2, fillColor: projetado(p.estado) ? '#ffffff' : '#fe6218', fillOpacity: 1 })
         .bindTooltip(lbl, { permanent: true, direction: 'right', className: 'mr-pop', offset: [8, 0] })
         .bindPopup(() => nodePopup(pi, true), { maxWidth: 320 })
+        .addTo(L_.pops);
+    });
+    (store.state.settings.popsRede || []).forEach(p => {
+      if (d.pops.some(x => x.name === p.nome)) return;
+      L.circleMarker([p.lat, p.lng], { radius: 8, color: '#002947', weight: 2, fillColor: projetado(p.estado) ? '#ffffff' : '#fe6218', fillOpacity: 1, dashArray: '3 2' })
+        .bindTooltip(p.codigo || short(p.nome), { permanent: true, direction: 'right', className: 'mr-pop', offset: [8, 0] })
+        .bindPopup(`<b>${U.esc(p.nome)}</b>${p.codigo ? ' <span class="tag">' + U.esc(p.codigo) + '</span>' : ''}<br>${U.esc(p.estado || '')} · cadastrado no sistema<br><span class="tiny">${p.lat.toFixed(6)}, ${p.lng.toFixed(6)} · ${U.esc(p.por || '')} ${U.date(p.em)}</span>${p.obs ? '<br><i>' + U.esc(p.obs) + '</i>' : ''}`)
         .addTo(L_.pops);
     });
     L_.pops.addTo(map);
@@ -139,7 +171,7 @@
     // legenda
     const Leg = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
       const div = L.DomUtil.create('div', 'mr-legend');
-      div.innerHTML = FO_COLORS.map(([, col, lab]) => `<span><i style="background:${col}"></i>${lab}</span>`).join('') + `<span><i class="dot" style="background:#fe6218"></i>POP</span><span><i class="dot" style="background:#002947"></i>CEO</span><span><i class="dot" style="background:#01a09c"></i>CEOS</span>`;
+      div.innerHTML = FO_COLORS.map(([, col, lab]) => `<span><i style="background:${col};${col === '#ffffff' ? 'outline:1px solid #3a3a3a' : ''}"></i>${lab}</span>`).join('') + `<span><i class="dot" style="background:#fe6218"></i>POP</span><span><i class="dot" style="background:#002947"></i>CEO</span><span><i class="dot" style="background:#01a09c"></i>CEOS</span>`;
       L.DomEvent.disableClickPropagation(div); return div; } });
     map.addControl(new Leg());
     // botão direito / toque longo: coordenadas do ponto
@@ -188,19 +220,81 @@
   }
 
   /* ---------- Painel lateral ---------- */
-  let sideTab = 'teste';
+  let sideTab = 'pops';
   function side(tab) {
     if (tab) sideTab = tab;
     const box = U.$('#mrSide'); if (!box) return;
-    box.innerHTML = `<div class="tabs">${[['teste', 'Teste OTDR'], ['camadas', 'Camadas'], ['buscar', 'Buscar'], ['codigos', 'Códigos']].map(([k, l]) => `<button class="${sideTab === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div><div id="mrTab"></div><p class="tiny muted" id="mrNote"></p>`;
+    box.innerHTML = `<div class="tabs">${[['pops', 'POPs'], ['teste', 'Teste OTDR'], ['camadas', 'Camadas'], ['buscar', 'Buscar'], ['codigos', 'Códigos']].map(([k, l]) => `<button class="${sideTab === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div><div id="mrTab"></div><p class="tiny muted" id="mrNote"></p>`;
     U.$$('[data-st]', box).forEach(b => b.onclick = () => side(b.dataset.st));
-    ({ teste: tabTeste, camadas: tabCamadas, buscar: tabBuscar, codigos: () => { U.$('#mrTab').innerHTML = codesHTML(); bindCodes(); } })[sideTab]();
+    ({ pops: tabPops, teste: tabTeste, camadas: tabCamadas, buscar: tabBuscar, codigos: () => { U.$('#mrTab').innerHTML = codesHTML(); bindCodes(); } })[sideTab]();
+  }
+
+  /* ---------- POPs: todos os POPs da rede (KMZ + cadastrados), seleção e cadastro ---------- */
+  function allPops() {
+    const d = M.rede.data, al = store.state.settings.popAliases || [];
+    const codeOf = (n) => (al.find(a => a.pop === n) || {}).codigo || '';
+    const kmz = d.pops.map(p => ({ nome: p.name, codigo: codeOf(p.name), estado: p.estado, pt: p.pt, origem: 'KMZ', obs: p.obs }));
+    const cad = (store.state.settings.popsRede || []).filter(p => !d.pops.some(x => x.name === p.nome)).map(p => ({ nome: p.nome, codigo: p.codigo || codeOf(p.nome), estado: p.estado, pt: [p.lat, p.lng], origem: 'Cadastrado', id: p.id, em: p.em, por: p.por, obs: p.obs }));
+    return kmz.concat(cad).sort((a, b) => (a.codigo || 'zzz' + a.nome).localeCompare(b.codigo || 'zzz' + b.nome, 'pt-BR'));
+  }
+  const popKey = (p) => p.origem + '|' + p.nome;
+  function tabPops() {
+    const T = M.tool; T.popSel = T.popSel || []; T.popQ = T.popQ || ''; T.popEst = T.popEst || '';
+    const all = allPops(), q = FC.bb.norm(T.popQ);
+    const list = all.filter(p => (!q || FC.bb.norm(p.nome + ' ' + p.codigo).includes(q)) && (!T.popEst || (T.popEst === 'impl' ? !projetado(p.estado) : projetado(p.estado))));
+    const sel = new Set(T.popSel), nKmz = all.filter(p => p.origem === 'KMZ').length;
+    U.$('#mrTab').innerHTML = `<div class="mr-pop-head"><b>${all.length} POPs</b> <span class="tiny muted">${nKmz} do KMZ${all.length - nKmz ? ` · ${all.length - nKmz} cadastrados no sistema` : ''}</span></div>
+      <div class="form-grid" style="grid-template-columns:1fr 130px"><input id="ppQ" type="search" placeholder="Buscar POP ou código" value="${U.esc(T.popQ)}"><select id="ppE"><option value="">Todos</option><option value="impl" ${T.popEst === 'impl' ? 'selected' : ''}>Implantados</option><option value="proj" ${T.popEst === 'proj' ? 'selected' : ''}>Em projeto</option></select></div>
+      <div class="btn-row"><label class="check small"><input type="checkbox" id="ppAll" ${list.length && list.every(p => sel.has(popKey(p))) ? 'checked' : ''}> Selecionar todos (${list.length})</label>${store.can('config.tecnica') ? `<button class="btn sm primary" id="ppNew">${ui.icon('plus')}Novo POP</button>` : ''}</div>
+      <div class="mr-pop-list">${list.map(p => `<div class="mr-pop-row ${sel.has(popKey(p)) ? 'on' : ''}"><input type="checkbox" data-pk="${U.esc(popKey(p))}" ${sel.has(popKey(p)) ? 'checked' : ''} aria-label="Selecionar ${U.esc(p.nome)}"><button class="mr-pop-go" data-pgo="${U.esc(popKey(p))}">${p.codigo ? `<span class="tag">${U.esc(p.codigo)}</span>` : ''}<span>${U.esc(short(p.nome))}</span><span class="tiny ${projetado(p.estado) ? 'warn-text' : 'muted'}">${U.esc(p.estado || '')}${p.origem === 'Cadastrado' ? ' · cadastrado' : ''}</span></button>${p.origem === 'Cadastrado' && store.can('config.tecnica') ? `<button class="btn sm ghost" data-pdel="${U.esc(p.id)}" title="Excluir POP cadastrado" aria-label="Excluir ${U.esc(p.nome)}">${ui.icon('trash')}</button>` : ''}</div>`).join('') || '<p class="muted small">Nenhum POP encontrado.</p>'}</div>
+      ${sel.size ? `<div class="btn-row"><button class="btn sm" id="ppFit">${ui.icon('map')}Ver ${sel.size} selecionado(s) no mapa</button><button class="btn sm ghost" id="ppClr">Limpar seleção</button></div>` : ''}`;
+    const $ = (id) => U.$('#' + id);
+    $('ppQ').oninput = U.debounce(() => { T.popQ = $('ppQ').value; tabPops(); const i = $('ppQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 200);
+    $('ppE').onchange = () => { T.popEst = $('ppE').value; tabPops(); };
+    $('ppAll').onchange = () => { const ks = list.map(popKey); T.popSel = $('ppAll').checked ? [...new Set(T.popSel.concat(ks))] : T.popSel.filter(k => !ks.includes(k)); drawPopSel(true); tabPops(); };
+    U.$$('[data-pk]').forEach(c => c.onchange = () => { const k = c.dataset.pk; T.popSel = c.checked ? [...new Set(T.popSel.concat(k))] : T.popSel.filter(x => x !== k); drawPopSel(false); tabPops(); });
+    U.$$('[data-pgo]').forEach(b => b.onclick = () => { const p = all.find(x => popKey(x) === b.dataset.pgo); if (!p) return; M.map.setView(p.pt, Math.max(M.map.getZoom(), 16)); flash(L.circleMarker(p.pt, { radius: 18, color: '#ffd23f', weight: 4, fill: false })); });
+    U.$$('[data-pdel]').forEach(b => b.onclick = async () => { const p = (store.state.settings.popsRede || []).find(x => x.id === b.dataset.pdel); if (!p || !(await ui.confirm('Excluir POP', `Excluir o POP cadastrado ${p.nome}?`, 'Excluir', true))) return; store.setSettings('popsRede', store.state.settings.popsRede.filter(x => x.id !== p.id), 'POP excluído: ' + p.nome); FC.rerender(); });
+    const nw = $('ppNew'); nw && (nw.onclick = novoPop);
+    const fit = $('ppFit'); fit && (fit.onclick = () => drawPopSel(true));
+    const clr = $('ppClr'); clr && (clr.onclick = () => { T.popSel = []; drawPopSel(false); tabPops(); });
+  }
+  /** Destaque dos POPs selecionados no mapa */
+  function drawPopSel(fit) {
+    (M.popHL || []).forEach(l => M.map.removeLayer(l)); M.popHL = [];
+    const sel = new Set(M.tool.popSel || []), ps = allPops().filter(p => sel.has(popKey(p)));
+    ps.forEach(p => M.popHL.push(L.circleMarker(p.pt, { radius: 14, color: '#ffd23f', weight: 4, fill: false, interactive: false }).addTo(M.map)));
+    if (fit && ps.length) ps.length === 1 ? M.map.setView(ps[0].pt, 16) : M.map.fitBounds(L.latLngBounds(ps.map(p => p.pt)).pad(.15));
+  }
+  /** Novo POP: clique no mapa para posicionar */
+  function novoPop() {
+    if (!store.require('config.tecnica')) return;
+    ui.toast('Clique no mapa onde fica o novo POP.', 'info', 5000);
+    U.$('#mrMap').classList.add('mr-picking');
+    M.map.once('click', (e) => {
+      U.$('#mrMap').classList.remove('mr-picking');
+      const la = +e.latlng.lat.toFixed(6), lo = +e.latlng.lng.toFixed(6);
+      ui.modal({ title: 'Novo POP', body: `<form class="form-grid" id="npf">${ui.field('Nome do POP', ui.input('nome', '', 'required placeholder="ex.: POP-ALVORADA"'))}${ui.field('Código', ui.input('codigo', '', 'placeholder="ex.: ALV" style="text-transform:uppercase"'), 'Usado nos testes OTDR')}
+        ${ui.field('Situação', ui.select('estado', ['Implantado', 'Implantada e certificada', 'Em projeto'], 'Implantado'))}${ui.field('Latitude', ui.input('lat', la, 'type="number" step="0.000001"'))}${ui.field('Longitude', ui.input('lng', lo, 'type="number" step="0.000001"'))}${ui.field('Observação', '<textarea name="obs"></textarea>', '', 'full')}</form>`,
+        actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Cadastrar POP', cls: 'primary', icon: 'check', onClick: (b) => {
+          const f = ui.formData(U.$('#npf', b)); const nome = f.nome.trim(), codigo = f.codigo.trim().toUpperCase().replace(/^POP-?/, '');
+          if (!nome) { ui.toast('Informe o nome do POP.', 'err'); return false; }
+          if (allPops().some(p => FC.bb.norm(p.nome) === FC.bb.norm(nome))) { ui.toast('Já existe um POP com esse nome.', 'err'); return false; }
+          const pop = { id: U.uid('pop_'), nome, codigo, estado: f.estado, lat: U.parseNum(f.lat), lng: U.parseNum(f.lng), obs: f.obs, por: store.user().nome, em: U.now() };
+          store.setSettings('popsRede', [...(store.state.settings.popsRede || []), pop], 'POP cadastrado: ' + nome);
+          if (codigo) store.setSettings('popAliases', [...(store.state.settings.popAliases || []).filter(a => FC.bb.norm(a.codigo) !== FC.bb.norm(codigo)), { codigo, pop: nome }], 'Código do POP ' + codigo);
+          M.tool.popSel = [...(M.tool.popSel || []), 'Cadastrado|' + nome];
+          ui.toast('POP cadastrado e adicionado à lista.', 'ok'); FC.rerender();
+        } }] });
+    });
   }
 
   function tabCamadas() {
     const L_ = M.layers, map = M.map; M.boxOn = M.boxOn || {};
     const cnt = (g) => g.getLayers().length;
-    U.$('#mrTab').innerHTML = `<h4>Cabos por capacidade</h4>${FO_COLORS.map(([, col, lab]) => `<label class="check"><input type="checkbox" data-lc="${lab}" ${map.hasLayer(L_.cabos[lab]) ? 'checked' : ''}><span class="mr-sw" style="background:${col}"></span>${lab} <span class="muted tiny">(${cnt(L_.cabos[lab])})</span></label>`).join('')}
+    const grupos = FO_COLORS.map(([, col, lab]) => [col, lab]).concat(L_.cabos['Sem capacidade'] ? [[SEM_FO, 'Sem capacidade']] : []);
+    const nCab = (g) => g.getLayers().filter(l => l.options.interactive !== false).length;
+    U.$('#mrTab').innerHTML = `<h4>Cabos por capacidade</h4>${grupos.map(([col, lab]) => `<label class="check"><input type="checkbox" data-lc="${lab}" ${map.hasLayer(L_.cabos[lab]) ? 'checked' : ''}><span class="mr-sw" style="background:${col};${col === '#ffffff' ? 'outline:1px solid #3a3a3a' : ''}"></span>${lab} <span class="muted tiny">(${nCab(L_.cabos[lab])})</span></label>`).join('')}
       <p class="tiny muted">Linha tracejada = cabo em projeto / não implantado.</p>
       <h4>Caixas <span class="tiny muted">(a partir do zoom 14)</span></h4>${Object.keys(L_.caixas).sort().map(k => `<label class="check"><input type="checkbox" data-lb="${U.esc(k)}" ${M.boxOn[k] !== false ? 'checked' : ''}><span class="mr-sw round" style="background:${BOX_COLORS[k] || '#8a96a3'}"></span>${U.esc(k)} <span class="muted tiny">(${cnt(L_.caixas[k])})</span></label>`).join('')}
       <h4>Outros</h4><label class="check"><input type="checkbox" id="lpPops" ${map.hasLayer(L_.pops) ? 'checked' : ''}><span class="mr-sw round" style="background:#fe6218"></span>POPs (${cnt(L_.pops)})</label>
@@ -239,7 +333,7 @@
         <div class="form-grid" style="grid-template-columns:1fr 1fr">${ui.field('Origem (onde o OTDR estava)', `<select id="taA"><option value="">—</option>${pops.map(p => `<option ${p === T.a ? 'selected' : ''}>${U.esc(p)}</option>`).join('')}</select>`)}${ui.field('Destino', `<select id="taB"><option value="">—</option>${pops.map(p => `<option ${p === T.b ? 'selected' : ''}>${U.esc(p)}</option>`).join('')}</select>`)}</div>
         <div class="btn-row"><button class="btn sm" id="taSwap">⇄ Inverter</button><button class="btn sm primary" id="taRoute" ${T.a && T.b ? '' : 'disabled'}>Traçar rota</button></div>
         ${T.routes.length > 1 ? `<div class="mr-routes">${T.routes.map((x, i) => `<label class="check small"><input type="radio" name="taR" value="${i}" ${i === T.ri ? 'checked' : ''}> Rota ${i + 1}: ${U.m(x.len, 0)} · ${x.det.caixas.length} caixas${i === T.best ? ' <span class="badge ok">mais próxima do teste</span>' : ''}</label>`).join('')}</div>` : ''}
-        ${r ? ui.field('Fator fibra ÷ traçado desenhado', ui.input('taF', R ? R.f.toFixed(3) : '', 'type="number" step="0.001" min="1" max="2"'), R ? R.fHint : '') : ''}
+        ${r ? ui.field('Relação fibra ÷ traçado desenhado', ui.input('taF', R ? R.f.toFixed(3) : '', 'type="number" step="0.001" min="1" max="2"'), R ? R.fHint : '') : ''}
       </details>
       ${R ? `<div class="kv mr-kv"><div><span class="k">Rota</span><span class="v">${U.m(R.r.len, 0)} desenhados</span></div><div><span class="k">Fibra (OTDR)</span><span class="v">${R.L ? U.m(R.L, 0) : '—'}</span></div><div><span class="k">Caixas</span><span class="v">${R.lances.length - 1}</span></div><div><span class="k">Trechos com atenção</span><span class="v">${R.lances.filter(x => x.pior >= 2).length}</span></div></div>
         <p class="note small">${ui.icon('map')}<span>Clique em um <b>cabo da rota</b> no mapa para ver as atenuações daquele trecho entre caixas.</span></p>
@@ -288,7 +382,7 @@
     const m = T.mid ? store.get('measurements', T.mid) : null;
     const L0 = m ? C.otdrNet(m) : null, k = L0 ? L0 / r.len : null, f0 = +(store.state.settings.rede || {}).fator || 1.2;
     const f = U.parseNum(T.fator) || (k && k >= 1 && k <= 1.6 ? k : f0);
-    const fHint = T.fator ? 'Valor ajustado manualmente.' : k && k >= 1 && k <= 1.6 ? `Calculado pelo teste: fibra ${U.m(L0, 0)} ÷ traçado ${U.m(r.len, 0)}.` : k && k < 1 ? '<span class="warn-text">O teste termina antes do fim da rota (possível rompimento): fator padrão.</span>' : 'Fator padrão (reservas, subidas e curvas).';
+    const fHint = T.fator ? 'Valor ajustado manualmente.' : k && k >= 1 && k <= 1.6 ? `Calculado pelo teste: fibra ${U.m(L0, 0)} ÷ traçado ${U.m(r.len, 0)}.` : k && k < 1 ? '<span class="warn-text">O teste termina antes do fim da rota (possível rompimento): relação padrão.</span>' : 'Relação padrão (reservas, subidas e curvas).';
     const launch = m ? (+m.launchM || 0) : 0;
     const an = m ? C.analyze(m, store.get('trechos', m.trechoId)) : null;
     const sev = { excelente: 0, ok: 1, atencao: 2, reprovado: 3 };
@@ -417,7 +511,7 @@
     const l = R.m ? store.get('links', R.m.linkId) || {} : {};
     const x0 = lances[0];
     const titulo = multi ? `${evs.length} evento(s) selecionado(s) · ${short(M.tool.a)} → ${short(M.tool.b)}` : `Trecho ${short(x0.from.nome)} → ${short(x0.to.nome)}`;
-    const cab = [R.m ? `Teste: ${l.nome || ''} · ${U.dt(R.m.data)} · ${R.m.fileName || ''}` : '', `Rota: ${M.tool.a} → ${M.tool.b}`, multi ? `Eventos: ${evs.map(e => e.n).join(', ')} · ${lances.length} trecho(s) entre caixas` : '', `Fator fibra ÷ traçado: ${U.num(R.f, 3)}${R.launch ? ` · bobina de lançamento ${R.launch} m` : ''}`, `Rede: ${M.rede.arquivo}`].filter(Boolean);
+    const cab = [R.m ? `Teste: ${l.nome || ''} · ${U.dt(R.m.data)} · ${R.m.fileName || ''}` : '', `Rota: ${M.tool.a} → ${M.tool.b}`, multi ? `Eventos: ${evs.map(e => e.n).join(', ')} · ${lances.length} trecho(s) entre caixas` : '', `Relação fibra ÷ traçado: ${U.num(R.f, 3)}${R.launch ? ` · bobina de lançamento ${R.launch} m` : ''}`, `Rede: ${M.rede.arquivo}`].filter(Boolean);
     const boxPt = (b) => b.lat != null ? [b.lat, b.lng] : pointAt(R.r.det.coords, b.distKmzM).pt;
     const descL = (x) => `Trecho ${x.i + 1}: ${x.from.nome} → ${x.to.nome} · ${U.num(x.x1 - x.x0, 0)} m desenhados (~${U.num((x.x1 - x.x0) * R.f, 0)} m de fibra) · OTDR ${U.num(x.fib0, 0)}–${U.num(x.fib1, 0)} m\nCabos: ${x.cabos.map(c => c.nome + ' — ' + c.tipo).join('; ')}`;
     const linhas = lances.map(x => `<Placemark><name>${esc(`Trecho ${x.i + 1}: ${short(x.from.nome)} → ${short(x.to.nome)}`)}</name><styleUrl>#seg</styleUrl><description>${esc(descL(x))}</description><LineString><tessellate>1</tessellate><coordinates>${x.coords.map(ll).join(' ')}</coordinates></LineString></Placemark>`).join('\n');
@@ -480,6 +574,10 @@ ${cx}
   .mr-kv{grid-template-columns:repeat(2,minmax(0,1fr))}.mr-lances{display:grid;gap:4px}.mr-lance{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:7px 9px;cursor:pointer;font:500 12px var(--font-body)}.mr-lance:hover{border-color:var(--accent)}.mr-lance.on{border-color:var(--orange);background:var(--accent-soft)}
   .mr-dot{min-width:20px;height:20px;border-radius:10px;display:grid;place-items:center;font:700 11px var(--font-mono);background:var(--mute-bg);color:var(--fg-2)}.mr-dot.warn{background:var(--warn);color:#fff}.mr-dot.bad{background:var(--bad);color:#fff}
   .mr-lance-det{border:2px solid var(--orange);border-radius:10px;padding:10px;display:grid;gap:6px}.mr-lance-det .tbl{font-size:12px}.mr-lance-det .tbl td,.mr-lance-det .tbl th{padding:6px 7px}
+  .mr-pop-head{display:flex;gap:8px;align-items:baseline}.mr-pop-list{display:grid;gap:3px;max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:4px}
+  .mr-pop-row{display:grid;grid-template-columns:auto 1fr auto;gap:6px;align-items:center;padding:3px 6px;border-radius:6px}.mr-pop-row.on{background:var(--accent-soft)}
+  .mr-pop-go{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;text-align:left;border:0;background:none;color:var(--fg);cursor:pointer;font:500 12.5px var(--font-body);padding:4px 0}.mr-pop-go .tiny{grid-column:1/-1}.mr-pop-go:hover span:nth-child(2){color:var(--accent)}
+  .mr-picking{cursor:crosshair}.mr-picking .leaflet-interactive{cursor:crosshair}
   .mr-sel{border:1px dashed var(--line-2);border-radius:10px;padding:10px;display:grid;gap:8px;margin-top:8px;background:var(--surface-2)}.mr-sel-list{display:flex;flex-wrap:wrap;gap:6px}
   .mr-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 4px 3px 9px;border-radius:14px;background:var(--surface);border:1px solid var(--line);font-size:12px}.mr-chip.reprovado{border-color:var(--bad)}.mr-chip.atencao{border-color:var(--warn)}
   .mr-chip button{border:0;background:var(--mute-bg);color:var(--fg-2);width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1}

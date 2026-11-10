@@ -95,7 +95,7 @@
     U.$$('[data-delc]', box).forEach(b => b.onclick = () => { store.setSettings('budget.components', S.budget.components.filter(c => c.id !== b.dataset.delc), 'Componente removido'); FC.rerender(); });
     U.$('#addr').onclick = () => { store.setSettings('regionRules', [...S.regionRules, { pattern: 'POP-XXX', regiao: 'Nova região' }], 'Regra de região adicionada'); FC.rerender(); };
     U.$$('[data-delr]', box).forEach(b => b.onclick = () => { store.setSettings('regionRules', S.regionRules.filter((_, i) => i !== +b.dataset.delr), 'Regra de região removida'); FC.rerender(); });
-    U.$('#tdef').onclick = async () => { if (!(await ui.confirm('Restaurar padrões', 'Restaurar tolerâncias, perdas, critérios OTDR, fibras e certificação para os valores padrão? Fatores aprovados são mantidos.', 'Restaurar'))) return; ['tolerance', 'budget', 'otdr', 'fibers', 'certification', 'history'].forEach(k => store.setSettings(k, U.clone(FC.defaults[k]), 'Padrão restaurado: ' + k)); FC.rerender(); };
+    U.$('#tdef').onclick = async () => { if (!(await ui.confirm('Restaurar padrões', 'Restaurar tolerâncias, perdas, critérios OTDR, fibras e certificação para os valores padrão?', 'Restaurar'))) return; ['tolerance', 'budget', 'otdr', 'fibers', 'certification', 'history'].forEach(k => store.setSettings(k, U.clone(FC.defaults[k]), 'Padrão restaurado: ' + k)); FC.rerender(); };
     U.$('#tsv').onclick = () => {
       if (v('t_att') > v('t_max')) return ui.toast('A faixa de atenção não pode ser maior que a tolerância máxima.', 'err');
       try { S.regionRules.forEach((_, i) => new RegExp(U.$(`[data-rp="${i}"]`).value)); } catch (e) { return ui.toast('Expressão regular inválida nas regras de região.', 'err'); }
@@ -116,8 +116,8 @@
   function permissoes(box) {
     const can = store.can('equipe.gerenciar'), roles = Object.keys(FC.roles);
     box.innerHTML = `<section class="panel"><header><h3>Matriz de permissões</h3><button class="btn sm" id="team">${ui.icon('team')}Gerenciar equipe</button></header>${can ? '' : `<div class="note warn">${ui.icon('alert')}<div>Somente o Administrador altera permissões.</div></div>`}
-      <div class="table-scroll"><table class="tbl"><thead><tr><th>Permissão</th>${roles.map(r => `<th>${FC.roles[r].label}</th>`).join('')}</tr></thead><tbody>${Object.keys(FC.permissions).map(p => `<tr><td>${U.esc(FC.permissionLabels[p])}</td>${roles.map(r => `<td><input type="checkbox" data-p="${p}" data-r="${r}" ${FC.permissions[p].includes(r) ? 'checked' : ''} ${can && !(r === 'admin' && p === 'equipe.gerenciar') ? '' : 'disabled'} aria-label="${FC.roles[r].label}: ${U.esc(FC.permissionLabels[p])}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>
-      <p class="small muted">Com Supabase, as mesmas regras são aplicadas no banco pelas políticas RLS (supabase/schema.sql).</p></section>`;
+      <div class="table-scroll"><table class="tbl"><thead><tr><th>Permissão</th>${roles.map(r => `<th>${FC.roles[r].label}</th>`).join('')}</tr></thead><tbody>${Object.keys(FC.permissions).map(p => `<tr><td>${U.esc(FC.permissionLabels[p])}</td>${roles.map(r => `<td><input type="checkbox" data-p="${p}" data-r="${r}" ${FC.permissions[p].includes(r) ? 'checked' : ''} ${can && !(FC.adminOnly || []).includes(p) && !(r === 'admin' && p === 'equipe.gerenciar') ? '' : 'disabled'} aria-label="${FC.roles[r].label}: ${U.esc(FC.permissionLabels[p])}"></td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      <p class="small muted">Excluir enlaces medidos, excluir medições e gerenciar a equipe são exclusivos do Administrador e não podem ser repassados. Com Supabase, as mesmas regras são aplicadas no banco pelas políticas RLS (supabase/schema.sql).</p></section>`;
     U.$('#team').onclick = () => FC.go('equipe');
     U.$$('[data-p]', box).forEach(c => c.onchange = () => {
       const p = c.dataset.p, r = c.dataset.r; const set = new Set(FC.permissions[p]); c.checked ? set.add(r) : set.delete(r);

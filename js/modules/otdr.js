@@ -84,7 +84,7 @@
     if (!kind) return ui.toast('Formato não suportado: ' + file.name, 'err');
     if (kind === 'CSV' || kind === 'XLSX') { tab = 'lote'; FC.go('otdr', { tab: 'lote' }); setTimeout(() => batchAdd([file]), 50); return; }
     // PDF do relatório e .SOR/.CSOR: mesmo cadastro automático da aba Enlaces (POPs, cabo, fibras, OS, técnico, medição)
-    if (kind === 'SOR' || kind === 'PDF') return FC.importTest(params && params.linkId ? store.get('links', params.linkId) : null, [file], { after: 'otdr', trechoId: params && params.trechoId });
+    if (kind === 'SOR' || kind === 'PDF' || kind === 'IMG') return FC.importTest(params && params.linkId ? store.get('links', params.linkId) : null, [file], { after: 'otdr', trechoId: params && params.trechoId });
     const out = U.$('#ares'); out.innerHTML = `<section class="panel"><p class="muted">Lendo ${U.esc(file.name)}…</p><div class="meter"><i id="prog" style="width:15%"></i></div></section>`;
     try {
       const buf = await U.readAsArrayBuffer(file);
@@ -170,7 +170,7 @@
     const prev = C.measurementsOf(m.trechoId).filter(x => x.id !== m.id && (x.data || '') < (m.data || '')).pop();
     out.innerHTML = `<section class="panel">
       <header><div><span class="eyebrow">Visão geral do teste</span><h2>${U.esc(l ? l.nome : '—')} <span class="muted">/ ${U.esc(t ? t.nome : '—')}</span>${ui.demo(m)}</h2><p class="small muted">${U.esc(m.fileName || 'Registro manual')} · ${U.esc(m.source)} · medido em ${U.dt(m.data)} por ${U.esc(m.responsavel || '—')}${m.equipamento ? ' · ' + U.esc(m.equipamento) : ''}</p></div>
-      <div class="btn-row"><button class="btn primary" id="rep">${ui.icon('report')}Gerar relatório</button><button class="btn" id="edm">${ui.icon('edit')}Corrigir dados</button><button class="btn" id="hist">${ui.icon('history')}Histórico</button>${m.attachmentId ? `<button class="btn" id="orig">${ui.icon('file')}Arquivo original</button>` : ''}${store.can('certificacao.aprovar') ? `<button class="btn" id="cert">${ui.icon('cert')}Certificar</button>` : ''}</div></header>
+      <div class="btn-row"><button class="btn primary" id="rep">${ui.icon('report')}Gerar relatório</button>${store.can('medicao.excluir') ? `<button class="btn ghost" id="delm" title="Excluir medição (Administrador)">${ui.icon('trash')}Excluir</button>` : ''}<button class="btn" id="edm">${ui.icon('edit')}Corrigir dados</button><button class="btn" id="hist">${ui.icon('history')}Histórico</button>${m.attachmentId ? `<button class="btn" id="orig">${ui.icon('file')}Arquivo original</button>` : ''}${store.can('certificacao.aprovar') ? `<button class="btn" id="cert">${ui.icon('cert')}Certificar</button>` : ''}</div></header>
       <div class="result-hero ${a.result}"><div class="ring ${a.result}">${ui.icon(icon)}</div><div><div class="big">${C.resultLabel[a.result]}</div>
         <p class="small">${a.result === 'insuficiente' ? 'Não há dados suficientes para classificar este teste. Faltam: <b>' + U.esc(a.missing.join(', ')) + '</b>.' : `Parâmetros analisados: <b>${U.esc(a.analyzed.join(' · '))}</b>`}</p>
         ${a.missing.length && a.result !== 'insuficiente' ? `<p class="small muted">Não disponíveis neste teste: ${U.esc(a.missing.join(', '))}</p>` : ''}</div></div>
@@ -196,7 +196,7 @@
       ${prev ? `<section class="panel"><header><h3>Mudanças desde a medição anterior (${U.date(prev.data)})</h3><button class="btn sm ghost" id="hist2">Comparar no histórico</button></header>${historySummary(prev, m)}</section>` : ''}`;
     const cmp = a.compare || C.compare(t, m), bud = a.budget || C.budget(t, m), T = store.state.settings.otdr;
     const exp = [
-      ['Distância × OZmap', cmp.status === 'sem-dados' ? 'OZmap não informado' : `${U.m(cmp.otdr, 0)} × ${U.m(cmp.base, 0)}${cmp.factor !== 1 ? ' (fator ' + U.num(cmp.factor, 3) + ')' : ''}`, cmp.status === 'sem-dados' ? '—' : `${U.pct(cmp.diffPct)} (tol. ${cmp.tol.max}%)`, cmp.status === 'sem-dados' ? 'sem-dados' : cmp.status],
+      ['Distância × OZmap', cmp.status === 'sem-dados' ? 'OZmap não informado' : `${U.m(cmp.otdr, 0)} × ${U.m(cmp.base, 0)}${cmp.factor !== 1 ? ' (relação ' + U.num(cmp.factor, 3) + ')' : ''}`, cmp.status === 'sem-dados' ? '—' : `${U.pct(cmp.diffPct)} (tol. ${cmp.tol.max}%)`, cmp.status === 'sem-dados' ? 'sem-dados' : cmp.status],
       ['Perda × orçamento', bud.pred ? `${U.db(bud.measured)} × ${U.db(bud.pred.total)} previsto` : 'Parâmetros insuficientes', bud.diff != null ? U.db(bud.diff) : '—', bud.status === 'ok' ? 'verde' : bud.status === 'atencao' ? 'amarelo' : bud.status === 'acima' ? 'vermelho' : 'sem-dados'],
       ['Margem do sistema', `Orçamento ${U.db(store.state.settings.budget.systemBudget)} − margem ${U.db(store.state.settings.budget.safetyMargin)}`, bud.margin != null ? U.db(bud.margin) : '—', bud.margin == null ? 'sem-dados' : bud.margin < 0 ? 'vermelho' : bud.margin < 2 ? 'amarelo' : 'verde'],
       ['ORL', m.orl ? U.db(m.orl) : 'Não disponível', `mín. ${T.orl.ok} dB`, !m.orl ? 'sem-dados' : m.orl >= T.orl.ok ? 'verde' : m.orl >= T.orl.atencao ? 'amarelo' : 'vermelho'],
@@ -219,6 +219,7 @@
     const cv = U.$('#tc', out);
     if (cv) ui.traceChart(cv, { trace, events: a.events, lengthM: m.lengthM, onPick: (e) => { const rows = U.$$('#evtTbl tbody tr', out); rows.forEach(r => r.style.outline = ''); const r = rows.find(r => r.firstElementChild && r.firstElementChild.textContent.trim() === String(e.n)); if (r) { r.style.outline = '2px solid var(--orange)'; r.scrollIntoView({ block: 'center', behavior: 'smooth' }); } ui.toast(`Evento ${e.n}: ${e.tipo} a ${U.km(e.distM, 4)} · ${U.db(e.loss, 3)}${e.note ? ' · ' + e.note : ''}`, e.level === 'reprovado' ? 'err' : e.level === 'atencao' ? 'warn' : 'info', 6000); } });
     U.$('#rep', out).onclick = () => FC.reports.otdrPDF(m);
+    const dm = U.$('#delm', out); dm && (dm.onclick = async () => { if (!(await ui.confirm('Excluir medição', `Excluir definitivamente a medição ${m.fileName || ''} de ${U.dt(m.data)} (enviada por ${m.responsavel || '—'}) e o arquivo anexado? A exclusão fica na auditoria.`, 'Excluir definitivamente', true))) return; if (await store.deleteMeasurement(m)) { ui.toast('Medição excluída.', 'ok'); FC.go('otdr', { tab: 'lista' }); } });
     U.$('#hist', out).onclick = () => FC.go('historico', { trechoId: m.trechoId });
     const h2 = U.$('#hist2', out); h2 && (h2.onclick = () => FC.go('historico', { trechoId: m.trechoId }));
     const og = U.$('#orig', out); og && (og.onclick = () => { const at = store.get('attachments', m.attachmentId); at ? ui.openAttachment(at) : ui.toast('Anexo não encontrado.', 'err'); });

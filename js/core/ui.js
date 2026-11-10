@@ -103,6 +103,7 @@
 
   /* ---------- Tabela com ordenação e paginação ---------- */
   ui.table = (el, { columns, rows, empty = 'Nenhum registro.', pageSize = 25, rowClass, onRow, sortKey, sortDir = 'desc', id }) => {
+    if (!el) return; // página trocada antes do fim da renderização assíncrona
     const st = { key: sortKey, dir: sortDir, page: 0 };
     const render = () => {
       let data = [...rows];

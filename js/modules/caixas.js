@@ -33,9 +33,8 @@
     const caixas = (t.caixas || []).filter(c => c.distM != null).sort((a, b) => a.distM - b.distM);
     const oz = +t.ozmapM || (t.coords && t.coords.length > 1 ? FC.geo.pathLen(t.coords) : null) || (caixas.length ? caixas[caixas.length - 1].distM : null);
     const L = C.otdrNet(m);
-    let factor = 1, factorSrc = 'Sem fator (1,000)';
-    if (L && oz) { factor = L / oz; factorSrc = 'Medido neste trecho (OTDR ÷ OZmap)'; }
-    else if (store.state.settings.correction.approved[t.tipo]) { factor = store.state.settings.correction.approved[t.tipo].factor; factorSrc = 'Fator aprovado para ' + t.tipo; }
+    let factor = 1, factorSrc = 'sem medição para calcular';
+    if (L && oz) { factor = L / oz; factorSrc = 'OTDR ÷ OZmap deste trecho'; }
     const fromB = m && m.direcaoInversa != null ? m.direcaoInversa : !!(m && link.popB && (m.direction || '').toString().toUpperCase().startsWith(String(link.popB).toUpperCase()));
     const evs = m ? (m.events || []).filter(e => !e.end && e.distM > 1) : [];
     const tol = (d) => Math.max(+S.matchM, d * +S.matchPct / 100);
@@ -183,7 +182,7 @@
     const body = U.$('#bxBody', box);
     if (!(t.caixas || []).length) { body.innerHTML = `<section class="panel"><div class="dz" id="bxDz">${ui.icon('map')}<b>Nenhuma caixa cadastrada neste trecho</b><span class="small muted">Importe o diagrama de caixas exportado do OZmap para saber em que distância cada caixa deve aparecer no OTDR.</span><button class="btn primary" id="bxImp2">Importar diagrama</button></div></section>`; U.$('#bxImp2').onclick = () => B.importFlow(sel); return; }
     body.innerHTML = `<section class="kpis"><div class="kpi accent"><span class="l">Caixas no trecho</span><span class="v">${r.rows.length}</span><span class="s">${U.esc((t.caixasFonte || {}).arquivo || '')}</span></div><div class="kpi ok"><span class="l">Com evento no OTDR</span><span class="v">${n('casada')}</span></div><div class="kpi warn"><span class="l">Sem evento</span><span class="v">${n('sem-evento')}</span><span class="s">passagem (fibra sem fusão) ou emenda não detectada</span></div><div class="kpi bad"><span class="l">Eventos sem caixa</span><span class="v">${r.orphans.length}</span><span class="s">fora do diagrama do OZmap</span></div><div class="kpi"><span class="l">A mexer</span><span class="v">${(t.caixas || []).filter(c => c.acao !== 'Nenhuma' && c.status !== 'Concluída').length}</span><span class="s">pendentes ou em execução</span></div></section>
-      <section class="panel"><header><div><h3>Diagrama OZmap × OTDR</h3><span class="sub">${m ? `Medição de ${U.dt(m.data)} · fator ${U.num(r.factor, 4)} (${U.esc(r.factorSrc)})` : 'Sem medição: mostrando apenas as posições do OZmap'}</span></div>
+      <section class="panel"><header><div><h3>Diagrama OZmap × OTDR</h3><span class="sub">${m ? `Medição de ${U.dt(m.data)} · relação ${U.num(r.factor, 4)} (${U.esc(r.factorSrc)})` : 'Sem medição: mostrando apenas as posições do OZmap'}</span></div>
         ${m ? `<label class="check small"><input type="checkbox" id="bxDir" ${r.fromB ? 'checked' : ''}> Medição feita a partir de ${U.esc(link.popB || 'B')} (sentido inverso)</label>` : ''}</header>
         <div class="table-scroll" style="border:0"><div style="min-width:900px">${B.diagram(t, r)}</div></div>
         <div class="btn-row small"><span class="badge ok">Caixa com evento</span><span class="badge warn">Caixa sem evento</span><span class="badge info">Passagem / reserva</span><span class="badge bad">Evento sem caixa</span></div></section>

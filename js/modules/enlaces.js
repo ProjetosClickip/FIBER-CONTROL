@@ -97,10 +97,10 @@
       onOpen: (b) => {
         const btn = U.$('#fromTest', b);
         btn && (btn.onclick = async () => {
-          const [f] = await ui.pickFiles({ accept: '.sor,.msor,.pdf' }); if (!f) return;
+          const [f] = await ui.pickFiles({ accept: '.sor,.msor,.csor,.pdf,.png,.jpg,.jpeg,image/*' }); if (!f) return;
           try {
             const k = FC.importers.kindOf(f.name);
-            const r = k === 'SOR' ? (await FC.importers.readSOR(f))[0] : (await FC.importers.readPDF(f))[0];
+            const r = k === 'SOR' ? (await FC.importers.readSOR(f))[0] : k === 'IMG' ? (await FC.importers.readImage(f))[0] : (await FC.importers.readPDF(f))[0];
             const d = FC.importers.derive({ gen: r.draft.gen || {}, fileName: f.name, relPath: f.webkitRelativePath || '', text: r.text || '' });
             link.origem = d.origem;
             ['nome', 'popA', 'popB', 'caboId', 'tipoCabo', 'fibras', 'regiao', 'projeto'].forEach(k2 => { const i = U.$('#' + k2, b); if (i && d[k2] != null && d[k2] !== '') { i.value = d[k2]; const lab = i.closest('.field'); let a = lab.querySelector('.auto'); if (!a) { a = document.createElement('span'); a.className = 'auto'; lab.appendChild(a); } a.textContent = 'automático · ' + d.origem[k2]; } });
@@ -127,14 +127,12 @@
         ${ui.field('Tipo de trecho', ui.select('tipo', S.trechoTypes, t.tipo))}
         ${ui.field('Distância OZmap (m)', ui.input('ozmapM', t.ozmapM, 'type="number" step="0.1" min="0"'), t.kmzM ? 'KMZ: ' + U.m(t.kmzM, 0) : '')}
         ${ui.field('Cabo principal (FO)', ui.select('caboFO', S.fibers.capacities, t.caboFO))}
-        ${ui.field('Cabo conectado (FO)', ui.select('caboConectadoFO', [['', 'Nenhum'], ...S.fibers.capacities], t.caboConectadoFO || ''), 'Preencha quando houver entronque/derivação')}
         ${ui.field(S.fibers.column, ui.input('fibrasRestantes', t.fibrasRestantes, 'type="number" min="0"'), 'Fibras livres')}
         ${ui.field('Emendas', ui.input('emendas', t.emendas, 'type="number" min="0"'))}
         ${ui.field('Conectores', ui.input('conectores', t.conectores, 'type="number" min="0"'))}
         ${ui.field('λ de referência (nm)', ui.select('wavelength', Object.keys(S.budget.wavelengths), t.wavelength))}
         ${ui.field('Perdas adicionais (dB)', ui.input('perdaAdicional', t.perdaAdicional, 'type="number" step="0.01" min="0"'))}
         ${ui.field('Caixa / CEO', ui.input('caixa', t.caixa))}
-        ${ui.field('Local do entronque', ui.input('entronqueLocal', t.entronqueLocal))}
         <div class="field full"><span class="lbl">Componentes ópticos no trecho</span><div class="chips">${S.budget.components.map(c => `<label class="check tag"><input type="checkbox" name="cmp_${c.id}" ${(t.componentes || []).includes(c.id) ? 'checked' : ''}> ${U.esc(c.nome)} (${U.db(c.perda)})</label>`).join('') || '<span class="muted small">Cadastre componentes em Configurações › Parâmetros de perda</span>'}</div></div>
         ${ui.field('Observações', `<textarea name="obs">${U.esc(t.obs || '')}</textarea>`, '', 'full')}
       </form>`,
@@ -142,7 +140,7 @@
         const f = ui.formData(U.$('#tfm', b));
         const geoChanged = !isNew && (+f.ozmapM !== +t.ozmapM);
         if (geoChanged) snapshot(link, `Alteração da distância OZmap de ${t.nome}: ${t.ozmapM} → ${f.ozmapM} m`);
-        Object.assign(t, { nome: f.nome.trim(), ordem: +f.ordem || 1, tipo: f.tipo, ozmapM: f.ozmapM === '' ? null : +f.ozmapM, caboFO: +f.caboFO, caboConectadoFO: f.caboConectadoFO ? +f.caboConectadoFO : null, fibrasRestantes: f.fibrasRestantes === '' ? null : +f.fibrasRestantes, emendas: +f.emendas || 0, conectores: +f.conectores || 0, wavelength: +f.wavelength, perdaAdicional: +f.perdaAdicional || 0, caixa: f.caixa, entronqueLocal: f.entronqueLocal, obs: f.obs, componentes: S.budget.components.filter(c => f['cmp_' + c.id]).map(c => c.id) });
+        Object.assign(t, { nome: f.nome.trim(), ordem: +f.ordem || 1, tipo: f.tipo, ozmapM: f.ozmapM === '' ? null : +f.ozmapM, caboFO: +f.caboFO, fibrasRestantes: f.fibrasRestantes === '' ? null : +f.fibrasRestantes, emendas: +f.emendas || 0, conectores: +f.conectores || 0, wavelength: +f.wavelength, perdaAdicional: +f.perdaAdicional || 0, caixa: f.caixa, obs: f.obs, componentes: S.budget.components.filter(c => f['cmp_' + c.id]).map(c => c.id) });
         store.upsert('trechos', t, `${isNew ? 'Cadastro' : 'Edição'} do trecho ${t.nome} (${link.nome})`);
         if (isNew && store.state.versions.filter(v => v.linkId === link.id).length === 0) snapshot(link, 'Versão inicial');
         ui.toast('Trecho salvo. Comparativos recalculados.', 'ok'); FC.rerender();
@@ -151,20 +149,68 @@
   }
   FC.trechoForm = trechoForm;
 
+  /* ---------- Foto do OTDR: progresso do OCR e conferência editável dos valores e eventos ---------- */
+  function ocrProgress(nome) {
+    const w = document.createElement('div'); w.className = 'ocr-prog';
+    w.innerHTML = `<div class="panel"><b>Lendo a foto ${U.esc(nome)}</b><span class="small muted" data-s>Preparando a imagem…</span><div class="meter"><i data-p style="width:3%"></i></div><span class="tiny muted">Na primeira vez o leitor de texto (OCR) é baixado; depois fica em cache.</span></div>`;
+    document.body.appendChild(w);
+    const tr = { 'loading tesseract core': 'Carregando o leitor de texto', 'initializing tesseract': 'Iniciando o leitor', 'loading language traineddata': 'Baixando o idioma português', 'initializing api': 'Iniciando o leitor', 'recognizing text': 'Lendo o texto da foto' };
+    return { set: (s, p) => { const a = U.$('[data-s]', w), b = U.$('[data-p]', w); if (a) a.textContent = (tr[s] || s) + '…'; if (b && p != null) b.style.width = Math.round(Math.max(3, Math.min(100, p * 100))) + '%'; }, close: () => w.parentNode && w.parentNode.removeChild(w) };
+  }
+  const evRow = (e, i) => `<tr data-ev="${i}"><td class="num">${i + 1}</td><td><input data-f="dist" type="number" step="any" value="${e.distM != null ? +(+e.distM).toFixed(2) : ''}" aria-label="Distância do evento ${i + 1} (m)"></td><td><input data-f="loss" type="number" step="any" value="${e.loss != null ? e.loss : ''}" aria-label="Perda do evento ${i + 1}"></td><td><input data-f="refl" type="number" step="any" value="${e.kind === 'refletivo' ? e.reflectance : ''}" placeholder="—" aria-label="Refletância do evento ${i + 1}"></td><td><input data-f="end" type="checkbox" ${e.end ? 'checked' : ''} aria-label="Fim da fibra"></td><td><button type="button" class="btn sm ghost" data-evdel="${i}" aria-label="Excluir evento ${i + 1}">${ui.icon('trash')}</button></td></tr>`;
+  function ocrEditor(d, file) {
+    const url = URL.createObjectURL(file);
+    return `<h4>Medição lida da foto ${ui.badge('amarelo', 'confira')}</h4>
+      <div class="ocr-grid"><figure class="ocr-img"><img src="${url}" alt="Foto do teste enviada"><figcaption class="tiny muted">Compare com a foto e corrija o que o OCR leu errado.</figcaption></figure>
+      <div><form class="form-grid" id="itm">
+        ${ui.field('Comprimento de onda', ui.select('wavelength', [['', '—'], 1310, 1490, 1550, 1577, 1625].map(x => Array.isArray(x) ? x : [x, x + ' nm']), d.wavelength || ''))}
+        ${ui.field('Fim da fibra (m)', ui.input('lengthM', d.lengthM != null ? +(+d.lengthM).toFixed(2) : '', 'type="number" step="any" min="0"'))}
+        ${ui.field('Perda total (dB)', ui.input('totalLoss', d.totalLoss != null ? d.totalLoss : '', 'type="number" step="any"'), d.totalLossOrigin && /soma/.test(d.totalLossOrigin) ? '<span class="auto">soma dos eventos</span>' : '')}
+        ${ui.field('ORL (dB)', ui.input('orl', d.orl || '', 'type="number" step="any"'))}
+        ${ui.field('Data da medição', ui.input('data', (d.data || U.now()).slice(0, 16), 'type="datetime-local"'))}
+        ${ui.field('Fibra', ui.input('fiberId', (d.gen && d.gen.fiberId) || ''))}
+      </form>
+      <div class="table-scroll"><table class="tbl" id="itev"><thead><tr><th class="num">#</th><th>Distância (m)</th><th>Perda (dB)</th><th>Refletância (dB)</th><th>Fim</th><th></th></tr></thead><tbody>${(d.events || []).map(evRow).join('')}</tbody></table></div>
+      <button type="button" class="btn sm" id="itevAdd">${ui.icon('plus')}Adicionar evento</button> <span class="tiny muted">Refletância em branco = emenda (não refletivo).</span></div></div>`;
+  }
+  function bindOcrEditor(b, d) {
+    const tb = U.$('#itev tbody', b);
+    const reidx = () => U.$$('tr', tb).forEach((tr, i) => { tr.dataset.ev = i; tr.firstElementChild.textContent = i + 1; });
+    U.$('#itevAdd', b).onclick = () => { tb.insertAdjacentHTML('beforeend', evRow({ distM: null, loss: null, kind: 'nao-refletivo' }, tb.children.length)); U.$('tr:last-child input', tb).focus(); };
+    tb.addEventListener('click', (e) => { const x = e.target.closest('[data-evdel]'); if (x) { const tr = x.closest('tr'); tr.parentNode.removeChild(tr); reidx(); } });
+  }
+  function applyOcrEditor(b, d, res) {
+    const m = ui.formData(U.$('#itm', b)), num = (v) => v === '' || v == null ? null : U.parseNum(v);
+    const evs = U.$$('#itev tbody tr', b).map((tr, i) => { const g = (f) => U.$(`[data-f="${f}"]`, tr); const dist = num(g('dist').value), loss = num(g('loss').value), refl = num(g('refl').value); return dist == null ? null : { n: i + 1, distM: dist, loss: loss || 0, reflectance: refl != null ? refl : 0, kind: refl != null ? 'refletivo' : 'nao-refletivo', end: g('end').checked, slope: 0 }; }).filter(Boolean).sort((a, b2) => a.distM - b2.distM);
+    d.events = evs;
+    d.wavelength = m.wavelength ? +m.wavelength : null; d.lengthM = num(m.lengthM); d.orl = num(m.orl);
+    const tl = num(m.totalLoss); if (tl !== d.totalLoss) d.totalLossOrigin = 'conferido na foto'; d.totalLoss = tl;
+    if (d.lengthM == null && evs.length) d.lengthM = evs[evs.length - 1].distM;
+    if (evs.length && !evs.some(e => e.end) && d.lengthM != null && Math.abs(evs[evs.length - 1].distM - d.lengthM) < 5) evs[evs.length - 1].end = true;
+    if (m.data) d.data = new Date(m.data).toISOString();
+    d.gen = d.gen || {}; if (m.fiberId) d.gen.fiberId = m.fiberId;
+    res.missing = res.missing.filter(x => !(x === 'Eventos' && evs.length) && !(x === 'Comprimento total' && d.lengthM != null) && !(x === 'Atenuação total' && d.totalLoss != null) && !(x === 'Comprimento de onda' && d.wavelength) && !(x === 'ORL' && d.orl));
+    if (d.lengthM == null || d.totalLoss == null) { ui.toast('Informe pelo menos o fim da fibra e a perda total (veja na foto).', 'err'); return false; }
+    return true;
+  }
+
   /* ---------- Importar teste → enlace + trecho + medição preenchidos automaticamente ---------- */
   FC.importTest = async (presetLink, files, opts = {}) => {
     if (!store.require('medicao.importar')) return;
-    files = files || await ui.pickFiles({ accept: '.pdf,.sor,.msor,.csor', multiple: true });
+    files = files || await ui.pickFiles({ accept: '.pdf,.sor,.msor,.csor,.png,.jpg,.jpeg,image/*', multiple: true });
     if (!files.length) return;
     if (files.length > 1) { FC.go('otdr', { tab: 'lote' }); setTimeout(() => FC.batchAdd(files), 60); return ui.toast(files.length + ' testes enviados para a Importação em lote.', 'info'); }
     const file = files[0], kind = FC.importers.kindOf(file.name);
-    if (kind !== 'SOR' && kind !== 'PDF') { if (opts.fallback) return opts.fallback(file); return ui.toast('Envie o PDF do relatório, .SOR ou .CSOR.', 'err'); }
+    if (kind !== 'SOR' && kind !== 'PDF' && kind !== 'IMG') { if (opts.fallback) return opts.fallback(file); return ui.toast('Envie o PDF do relatório, .SOR, .CSOR ou a foto da tela do OTDR.', 'err'); }
     ui.toast('Lendo ' + file.name + '…', 'info', 2000);
+    const prog = kind === 'IMG' ? ocrProgress(file.name) : null;
     let res, buf, hash;
     try {
       buf = await U.readAsArrayBuffer(file); hash = await U.sha256(buf);
-      res = (kind === 'SOR' ? await FC.importers.readSOR(file, buf) : await FC.importers.readPDF(file, buf))[0];
-    } catch (e) { return ui.toast('Não foi possível ler o teste: ' + e.message, 'err', 7000); }
+      res = (kind === 'SOR' ? await FC.importers.readSOR(file, buf) : kind === 'PDF' ? await FC.importers.readPDF(file, buf) : await FC.importers.readImage(file, prog.set))[0];
+    } catch (e) { prog && prog.close(); return ui.toast('Não foi possível ler o teste: ' + (e && e.message || e), 'err', 7000); }
+    prog && prog.close();
+    const isImg = res.kind === 'IMG';
     const d = res.draft, der = FC.importers.derive({ gen: d.gen || {}, fileName: file.name, relPath: file.webkitRelativePath || '', text: res.text || '' });
     const presetT = opts.trechoId ? store.get('trechos', opts.trechoId) : null;
     let match = presetT ? { link: store.get('links', presetT.linkId), trecho: presetT } : presetLink ? { link: presetLink, trecho: null } : FC.matchTarget(der);
@@ -210,7 +256,7 @@
         ${ui.field('Distância OZmap (m)', ui.input('ozmapM', T0 ? T0.ozmapM : '', 'type="number" step="0.1" min="0"'), 'Do traçado no OZmap (não vem no teste)')}
         ${ui.field('Bobina de lançamento (m)', ui.input('launchM', 0, 'type="number" step="any" min="0"'), 'Descontada da distância do OTDR')}
       </form>
-      <h4>Medição lida do teste</h4><div class="kv">${[
+      ${isImg ? ocrEditor(d, file) : ''}<h4 ${isImg ? 'hidden' : ''}>Medição lida do teste</h4><div class="kv" ${isImg ? 'hidden' : ''}>${[
         ['Fibra', d.gen && d.gen.fiberId], ['OS', d.gen && d.gen.os], ['Técnico OTDR', d.operadorOTDR || (d.gen && d.gen.operator)], ['Data da medição', d.data ? U.dt(d.data) : null],
         ['Comprimento de onda', d.wavelength ? d.wavelength + ' nm' : null], ['Fim da fibra', d.lengthM != null ? U.m(d.lengthM, 2) : null], ['Perda total', d.totalLoss != null ? U.db(d.totalLoss, 3) : null], ['ORL', d.orl ? U.db(d.orl) : null],
         ['Perda média', d.avgAtt ? U.num(d.avgAtt, 3) + ' dB/km' : null], ['IOR', d.ior], ['Eventos', (d.events || []).length], ['Equipamento', d.equipamento]
@@ -224,9 +270,11 @@
           hint.innerHTML = !l ? '<span class="auto">Será criado um enlace novo com os dados do teste</span>' : FC.samePops(l, der) ? '<span class="auto">Mesmo POP de origem e destino do teste: a medição entra no histórico deste enlace</span>' : '<span class="warn-text">Atenção: os POPs deste enlace são diferentes dos POPs do teste</span>';
         };
         sel.onchange = upd; upd();
+        if (isImg) bindOcrEditor(b, d);
       },
       actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Salvar', cls: 'primary', icon: 'check', onClick: async (b) => {
         const f = ui.formData(U.$('#itf', b)), t = ui.formData(U.$('#itt', b));
+        if (isImg && !applyOcrEditor(b, d, res)) return false;
         if (!f.nome.trim()) { ui.toast('Informe o nome do enlace.', 'err'); return false; }
         const L = U.$('#itLink', b).value ? store.get('links', U.$('#itLink', b).value) : null;
         const link = L || { id: U.uid('lnk_'), responsavel: u.nome, criadoEm: now, criadoPorTeste: file.name };
@@ -253,7 +301,7 @@
   function renderList(el) {
     el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Cadastro</span><h1>Enlaces</h1><p class="muted small">Cada enlace reúne seus trechos, medições, anexos e certificações.</p></div>
       <div class="acts"><button class="btn orange" id="impTest">${ui.icon('otdr')}Importar teste</button><button class="btn" id="impOz">${ui.icon('upload')}Importar planilha OZmap</button><button class="btn primary" id="newL">${ui.icon('plus')}Novo enlace</button></div></div>
-      <section class="dz" id="ldz">${ui.icon('otdr')}<b>Arraste aqui o teste do OTDR (PDF do SmartOTDR, .SOR ou .CSOR)</b><span class="small muted">Origem e Extremidade viram os POPs; cabo, fibras, OS, técnico, distância, perda, ORL e eventos são preenchidos automaticamente.</span></section>
+      <section class="dz" id="ldz">${ui.icon('otdr')}<b>Arraste aqui o teste do OTDR (PDF do SmartOTDR, .SOR, .CSOR ou foto da tela)</b><span class="small muted">Origem e Extremidade viram os POPs; cabo, fibras, OS, técnico, distância, perda, ORL e eventos são preenchidos automaticamente.</span></section>
       <section class="panel">${FC.filt.html('e')}</section>
       <section class="panel" id="lt"></section>`;
     U.$('#newL').onclick = () => linkForm();
@@ -275,12 +323,23 @@
           { key: 'oz', label: 'OZmap', num: true, sort: r => r.oz, render: r => U.km(r.oz) },
           { key: 'pct', label: 'Certificação', sort: r => r.pct, render: r => `<div style="min-width:110px"><span class="small">${r.cert}/${r.ts.length} · ${U.num(r.pct, 0)}%</span><div class="meter"><i style="width:${r.pct}%"></i></div></div>` },
           { key: 'div', label: 'Divergentes', num: true, sort: r => r.div, render: r => r.div ? ui.badge('vermelho', r.div) : '0' },
-          { key: 'resp', label: 'Responsável', sort: r => r.l.responsavel, render: r => U.esc(r.l.responsavel || '—') }
+          { key: 'resp', label: 'Responsável', sort: r => r.l.responsavel, render: r => U.esc(r.l.responsavel || '—') },
+          ...(store.can('enlace.excluir') ? [{ key: 'del', label: '', sortable: false, render: r => `<button class="btn sm ghost" data-dell="${r.l.id}" title="Excluir enlace (Administrador)" aria-label="Excluir ${U.esc(r.l.nome)}">${ui.icon('trash')}</button>` }] : [])
         ]
       });
     };
     draw();
+    const bindDel = () => U.$$('[data-dell]', el).forEach(b => b.onclick = async (e) => { e.stopPropagation(); const l = store.get('links', b.dataset.dell); if (l && await confirmDeleteLink(l)) FC.rerender(); });
+    bindDel(); U.$('#lt').addEventListener('click', () => setTimeout(bindDel, 0));
   }
+
+  async function confirmDeleteLink(link) {
+    const st = store.state, ts = st.trechos.filter(t => t.linkId === link.id), ids = ts.map(t => t.id);
+    const nm = st.measurements.filter(m => m.linkId === link.id || ids.includes(m.trechoId)).length, na = st.attachments.filter(a => a.linkId === link.id || ids.includes(a.trechoId)).length;
+    if (!(await ui.confirm('Excluir enlace medido', `Excluir definitivamente "${link.nome}" com ${ts.length} trecho(s), ${nm} medição(ões) e ${na} anexo(s)? Cadastrado por ${link.responsavel || '—'}. A exclusão fica registrada na auditoria e não pode ser desfeita.`, 'Excluir definitivamente', true))) return false;
+    await store.deleteLink(link); ui.toast('Enlace excluído.', 'ok'); return true;
+  }
+  FC.confirmDeleteLink = confirmDeleteLink;
 
   /* ---------- Detalhe ---------- */
   function renderDetail(el, link, focusTrecho) {
@@ -307,11 +366,7 @@
     U.$('#repL').onclick = () => FC.go('relatorios', { tipo: 'individual', linkId: link.id });
     U.$('#verL').onclick = () => versionsModal(link);
     const del = U.$('#delL');
-    del && (del.onclick = async () => {
-      if (!(await ui.confirm('Excluir enlace', `Excluir ${link.nome} e seus ${ts.length} trechos? As medições permanecem no histórico de auditoria.`, 'Excluir', true))) return;
-      ts.forEach(t => store.remove('trechos', t.id));
-      store.remove('links', link.id, 'Exclusão do enlace ' + link.nome); FC.go('enlaces');
-    });
+    del && (del.onclick = async () => { if (await confirmDeleteLink(link)) FC.go('enlaces'); });
     ui.table(U.$('#tt'), {
       rows: ts, sortKey: 'ordem', sortDir: 'asc', empty: 'Nenhum trecho. Clique em “Novo trecho” ou importe um teste.',
       rowClass: t => ({ divergente: 'row-bad', certificado: 'row-ok', medido: '' }[C.trechoStatus(t)] || '') + (t.id === focusTrecho ? ' focus' : ''),

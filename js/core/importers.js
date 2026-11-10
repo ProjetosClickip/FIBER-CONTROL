@@ -9,7 +9,10 @@
   const LIB = {
     pdf: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
     pdfWorker: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
-    ocr: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'
+    ocr: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+    ocrWorker: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+    ocrCore: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+    ocrLang: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/por@1.0.0/4.0.0_best_int'
   };
   I.accept = '.sor,.msor,.csor,.pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg';
   I.kindOf = (name) => { const e = U.ext(name); return e === 'sor' || e === 'msor' || e === 'csor' ? 'SOR' : e === 'pdf' ? 'PDF' : e === 'csv' ? 'CSV' : (e === 'xlsx' || e === 'xls') ? 'XLSX' : ['png', 'jpg', 'jpeg'].includes(e) ? 'IMG' : null; };
@@ -108,7 +111,7 @@
     // Tabela de eventos: "N  dist(km)  perda(dB)  refl(dB)" em linhas
     const lines = text.split(/\n/);
     lines.forEach(l => {
-      const m = l.match(/^\s*(\d{1,3})\s+(?:[A-Za-zÀ-ÿ/ ]{0,20}\s+)?(\d+[.,]\d{2,4})\s*(?:km)?\s+(-?\d+[.,]\d{2,3})\s*(?:dB)?(?:\s+(-\d{1,2}[.,]\d{1,3}|>-?\d+[.,]?\d*|-{2,}))?/);
+      const m = l.match(/^\s*(\d{1,3})\s+(?:[A-Za-zÀ-ÿ/ ]{0,20}\s+)?(\d+[.,]\d{2,4})\s*(?:km)?\s+(-?\d+[.,]\d{2,3})(?:\s*dB)?(?:\s+(-\d{1,2}[.,]\d{1,3}|>-?\d+[.,]?\d*|-{2,}))?/);
       if (m) d.events.push({ n: +m[1], distM: U.parseNum(m[2]) * 1000, loss: U.parseNum(m[3]), reflectance: m[4] && /^-\d/.test(m[4]) ? U.parseNum(m[4]) : 0, kind: m[4] && /^-\d/.test(m[4]) ? 'refletivo' : 'nao-refletivo', end: false, slope: 0 });
     });
     if (d.events.length) { d.events.sort((a, b) => a.distM - b.distM); found.push(d.events.length + ' eventos (tabela)'); if (d.lengthM && Math.abs(d.events[d.events.length - 1].distM - d.lengthM) < 50) d.events[d.events.length - 1].end = true; }
@@ -212,12 +215,115 @@
     return [{ kind: 'PDF', ok: f.found.length > 0, draft: Object.assign({ source: 'PDF', gen: {} }, f.d), extracted: f.found, missing: f.missing, warnings: ['Valores extraídos do texto do PDF: confira antes de salvar.'], text }];
   };
 
-  I.readImage = async (file, onProgress) => {
+  /* ---------- Foto da tela do OTDR / do relatório (OCR) ---------- */
+  /** Prepara a foto para o OCR: amplia, converte para cinza, inverte tela escura e reforça o contraste */
+  I.prepImage = async (file) => {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('Imagem inválida ou formato não suportado pelo navegador')); i.src = url; });
+      const k = Math.min(3, Math.max(1, 2200 / Math.max(img.width, 1)));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      const g = cv.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, cv.width, cv.height);
+      const id = g.getImageData(0, 0, cv.width, cv.height), px = id.data, n = px.length / 4, hist = new Uint32Array(256);
+      let soma = 0;
+      for (let i = 0; i < n; i++) { const y = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]); px[i * 4] = y; hist[y]++; soma += y; }
+      const escuro = soma / n < 110; // tela do OTDR com fundo escuro: inverte para texto preto em fundo claro
+      let lo = 0, hi = 255, acc = 0; for (; lo < 255 && (acc += hist[lo]) < n * 0.01; lo++); acc = 0; for (; hi > 0 && (acc += hist[hi]) < n * 0.01; hi--);
+      const amp = Math.max(1, hi - lo);
+      for (let i = 0; i < n; i++) { let y = (px[i * 4] - lo) * 255 / amp; y = y < 0 ? 0 : y > 255 ? 255 : y; if (escuro) y = 255 - y; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = y; px[i * 4 + 3] = 255; }
+      g.putImageData(id, 0, 0);
+      return { canvas: cv, escuro, w: img.width, h: img.height };
+    } finally { URL.revokeObjectURL(url); }
+  };
+  /** Corrige trocas comuns do OCR dentro de números (O→0, l/I→1, S→5, B→8) */
+  I.ocrFix = (t) => String(t || '').replace(/(?<=[\d,.\-])[Oo](?=[\d,.]|\b)|(?<=\b)[Oo](?=[,.]\d)/g, '0').replace(/(?<=\d)[lI|](?=\d)|(?<=[\s(])[lI](?=[,.]\d)/g, '1').replace(/(?<=\d[,.]?)S(?=\d)/g, '5').replace(/(?<=\d)B(?=\d)/g, '8').replace(/[‐–—]/g, '-');
+  /** Linhas do OCR no mesmo formato do leitor posicional de PDF (permite reaproveitar a leitura do relatório Viavi) */
+  I.ocrRows = (data) => (data.lines || []).map(l => {
+    const items = (l.words || []).filter(w => w.text && w.text.trim()).map(w => ({ s: I.ocrFix(w.text.trim()), x: w.bbox.x0, w: w.bbox.x1 - w.bbox.x0, y: -w.bbox.y0 }));
+    return { page: 1, y: items.length ? items[0].y : 0, items, text: items.map(i => i.s).join(' ') };
+  }).filter(r => r.items.length);
+  let ocrWorker = null;
+  I.ocrEngine = async (onProgress) => {
     await U.loadScript(LIB.ocr);
-    const res = await window.Tesseract.recognize(file, 'eng', { logger: m => onProgress && m.progress != null && onProgress(m.status, m.progress) });
-    const text = res.data.text || '';
+    if (!ocrWorker) ocrWorker = window.Tesseract.createWorker('por', 1, { workerPath: LIB.ocrWorker, corePath: LIB.ocrCore, langPath: LIB.ocrLang, logger: m => I._ocrLog && m.progress != null && I._ocrLog(m.status, m.progress) }).catch(e => { ocrWorker = null; throw e; });
+    I._ocrLog = onProgress;
+    return ocrWorker;
+  };
+  /** Campos do cabeçalho da tela/relatório lidos por rótulo (Origem, Extremidade, Ident. Cabo, Fibra, OS, Técnico) */
+  I.genFromText = (text) => {
+    const gen = {}, t = text.replace(/[ \t]+/g, ' ');
+    const pick = (re) => { const m = t.match(re); return m ? m[1].replace(/\s{2,}.*$/, '').trim().replace(/[|;]+$/, '').trim() : null; };
+    const fim = '(?=\\s{2,}|\\s+(?:Extremidade|Origem|Ident|ID d|Fibra|OS|T[ée]cnico|Data|Location|Cable|Fiber|Job|Operator)\\b|\\n|$)';
+    gen.locationA = pick(new RegExp('(?:Origem|Location\\s*A|Local\\s*A|Ponta\\s*A)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
+    gen.locationB = pick(new RegExp('(?:Extremidade|Location\\s*B|Local\\s*B|Ponta\\s*B|Destino)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
+    gen.cableId = pick(new RegExp('(?:Ident\\.?\\s*(?:do\\s*)?Cabo|Cable\\s*ID|ID\\s*do\\s*cabo)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
+    gen.fiberId = pick(new RegExp('(?:ID\\s*da\\s*Fibra(?:\\s*/\\s*N[úu]mero)?|Fiber\\s*(?:ID|Number))\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
+    gen.os = pick(new RegExp('(?:ID\\s*da\\s*OS|Job\\s*ID|\\bOS)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
+    gen.operator = pick(new RegExp('(?:ID\\s*do\\s*T[ée]cnico|Operador|Operator|T[ée]cnico)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
+    Object.keys(gen).forEach(k => { if (!gen[k] || gen[k].length < 2 || gen[k].length > 60) { delete gen[k]; return; } gen[k] = gen[k].replace(/^0(?=[A-Z]{2})/, ''); });
+    if (gen.fiberId) gen.fiberId = gen.fiberId.replace(/^([A-Z]{1,2})[Oo](?=\d+$)/, (x, a) => a + '0'); // "FO7" → "F07"
+    if (gen.os) { gen.project = gen.os; gen.projectSrc = 'ID da OS (foto)'; }
+    const eq = t.match(/(SmartOTDR[^\n]{0,30}|MTS[- ]?\d{3,4}\w*|FTB[- ]?\d{3,4}\w*|AQ\d{4}\w*)/i); if (eq) gen.equipment = eq[1].trim();
+    return gen;
+  };
+  /** Tabela de eventos de uma tela de OTDR (ou relatório): N  distância  perda  refletância  ... */
+  I.eventsFromOcr = (rows) => {
+    const hi = rows.findIndex(r => /Dist/i.test(r.text) && /(Perda|Loss|Atten)/i.test(r.text));
+    const hdr = hi >= 0 ? rows[hi].text : '';
+    let emM = /\(\s*m\s*\)|\bm\b/.test(hdr.replace(/km/gi, '')) && !/\(\s*km\s*\)/i.test(hdr);
+    const evs = [];
+    rows.slice(hi >= 0 ? hi + 1 : 0).forEach(r => {
+      const tk = r.text.replace(/\s*(km|dB\/km|dB|m)\b/gi, ' ').split(/\s+/).filter(Boolean);
+      if (!/^\d{1,3}[a-z]?$/i.test(tk[0] || '')) return;
+      const nums = tk.slice(1).map(x => x === '--' || x === '-' || x === '~' ? null : /^[<>]?-?\d+([.,]\d+)?$/.test(x.replace(/^[<>]/, '')) ? U.parseNum(x.replace(/^[<>]/, '')) : undefined).filter(v => v !== undefined);
+      if (nums.length < 2 || nums[0] == null) return;
+      const reflIdx = nums.findIndex((v, i) => i >= 2 && v != null && v < -10 && v > -90);
+      evs.push({ n: parseInt(tk[0], 10), dist: nums[0], loss: nums[1] == null ? 0 : nums[1], refl: reflIdx > 0 ? nums[reflIdx] : null });
+    });
+    if (!evs.length) return [];
+    if (!emM && evs.some(e => e.dist > 300)) emM = true; // 300 km não existe em enlace de campo: a coluna está em metros
+    const out = evs.filter(e => e.dist >= 0 && Math.abs(e.loss) < 30).map(e => ({ n: e.n, distM: emM ? e.dist : e.dist * 1000, loss: Math.abs(e.loss) < 30 ? e.loss : 0, reflectance: e.refl != null ? e.refl : 0, kind: e.refl != null ? 'refletivo' : 'nao-refletivo', end: false, slope: 0, ocr: true }));
+    out.sort((a, b) => a.distM - b.distM);
+    return out;
+  };
+
+  I.readImage = async (file, onProgress) => {
+    onProgress && onProgress('Preparando a imagem', 0.05);
+    const prep = await I.prepImage(file);
+    const w = await I.ocrEngine((s, p) => onProgress && onProgress(s, 0.1 + p * 0.85));
+    await w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }).catch(() => {});
+    const { data } = await w.recognize(prep.canvas);
+    const text = I.ocrFix(data.text || '');
+    const rows = I.ocrRows(data);
+    onProgress && onProgress('Interpretando', 0.97);
+    // 1º: foto do relatório PDF do Viavi (mesmos rótulos); 2º: tela do equipamento
+    let v = null; try { v = I.parseViaviPDF(rows); } catch (e) { v = null; }
     const f = I.fieldsFromText(text);
-    return [{ kind: 'IMG', ok: f.found.length > 0, draft: Object.assign({ source: 'IMG', gen: {} }, f.d), extracted: f.found, missing: f.missing, warnings: ['OCR experimental: confira cada valor com a tela do equipamento.'], text }];
+    const d = Object.assign({ source: 'IMG', gen: {} }, f.d);
+    const found = f.found.slice();
+    if (v) { ['wavelength', 'lengthM', 'totalLoss', 'totalLossOrigin', 'orl', 'ior', 'avgAtt', 'data', 'equipamento', 'fiberType', 'operadorOTDR'].forEach(k => { if (v.d[k] != null && d[k] == null) d[k] = v.d[k]; }); if (v.d.events.length > d.events.length) d.events = v.d.events; Object.assign(d.gen, v.d.gen); v.found.forEach(x => found.includes(x) || found.push(x)); }
+    const g2 = I.genFromText(text); Object.keys(g2).forEach(k => { if (!d.gen[k]) d.gen[k] = g2[k]; });
+    ['os', 'project', 'cableId', 'fiberId', 'operator'].forEach(k => { if (typeof d.gen[k] === 'string') d.gen[k] = d.gen[k].replace(/^0(?=[A-Z]{2})/, ''); });
+    if (d.gen.fiberId) d.gen.fiberId = d.gen.fiberId.replace(/^([A-Z]{1,2})[Oo](?=\d+$)/, (x, a) => a + '0');
+    if (d.gen.locationA && !found.includes('Origem/Extremidade')) found.push('Origem/Extremidade');
+    if (d.gen.cableId && !found.includes('Ident. cabo')) found.push('Ident. cabo');
+    const ev = I.eventsFromOcr(rows);
+    // escolhe a leitura de eventos mais completa (quantidade e refletâncias lidas)
+    const nota = (l) => (l || []).length * 10 + (l || []).filter(e => e.kind === 'refletivo').length;
+    if (nota(ev) > nota(d.events)) d.events = ev;
+    for (let i = found.length - 1; i >= 0; i--) if (/eventos/.test(found[i])) found.splice(i, 1);
+    if (d.events.length) found.push(d.events.length + ' eventos');
+    if (d.events.length) {
+      const last = d.events[d.events.length - 1];
+      if (d.lengthM == null) { d.lengthM = last.distM; found.push('Fim da fibra (último evento)'); }
+      if (Math.abs(last.distM - d.lengthM) < Math.max(5, d.lengthM * 0.002)) last.end = true;
+      if (d.totalLoss == null) { const cum = U.sum(d.events.filter(e => !e.end), e => +e.loss || 0); if (cum > 0) { d.totalLoss = +cum.toFixed(3); d.totalLossOrigin = 'soma dos eventos (foto)'; found.push('Perda total (soma dos eventos)'); } }
+    }
+    if (!d.equipamento && d.gen.equipment) d.equipamento = d.gen.equipment;
+    if (!d.operadorOTDR && d.gen.operator) d.operadorOTDR = d.gen.operator;
+    const missing = [];
+    if (d.lengthM == null) missing.push('Comprimento total'); if (!d.wavelength) missing.push('Comprimento de onda'); if (d.totalLoss == null) missing.push('Atenuação total'); if (!d.orl) missing.push('ORL'); if (!d.events.length) missing.push('Eventos'); if (!d.gen.locationA) missing.push('Origem/Extremidade');
+    return [{ kind: 'IMG', format: 'Foto da tela/relatório (OCR' + (prep.escuro ? ', tela escura invertida' : '') + ')', ok: found.length > 0, draft: d, extracted: found, missing, warnings: ['Leitura por foto (OCR): confira cada valor e a tabela de eventos com a tela do equipamento antes de salvar.'], text, conf: data.confidence }];
   };
 
   /* ---------- Planilhas ---------- */
@@ -251,7 +357,7 @@
   };
   I.specOZmap = {
     enlace: [/^enlace|^link|^rota/], trecho: [/^trecho|^segmento|^nome/], ozmap: [/distancia|comprimento|metragem|extensao/], restante: [/48\s*fo.*restante|restante|livres|disponive/],
-    cabo: [/^cabo$|identificacao do cabo|^id cabo/], capacidade: [/capacidade|^fo$|fibras$|qtd.*fibra/], conectado: [/conectado|derivacao|entronque/], caixa: [/caixa|ceo|local/], tipo: [/^tipo/]
+    cabo: [/^cabo$|identificacao do cabo|^id cabo/], capacidade: [/capacidade|^fo$|fibras$|qtd.*fibra/], caixa: [/caixa|ceo|local/], tipo: [/^tipo/]
   };
   /** Valor em metros: aceita "1,234 km", "1234 m", número puro (heurística: < 100 => km) */
   I.toMeters = (v, header = '') => {

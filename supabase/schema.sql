@@ -87,7 +87,7 @@ begin
     execute format('drop policy if exists fc_delete on public.%I', t);
     execute format('create policy fc_insert on public.%I for insert to authenticated with check (public.fc_has(array[''admin'',''engenheiro'',''supervisor'',''tecnico'']))', t);
     execute format('create policy fc_update on public.%I for update to authenticated using (public.fc_has(array[''admin'',''engenheiro'',''supervisor'',''tecnico'']))', t);
-    execute format('create policy fc_delete on public.%I for delete to authenticated using (public.fc_has(array[''admin'',''engenheiro'']))', t);
+    execute format('create policy fc_delete on public.%I for delete to authenticated using (public.fc_role() = ''admin'')', t);
   end loop;
 end $$;
 
@@ -108,8 +108,9 @@ create trigger trg_trechos_cert before insert or update on public.trechos for ea
 -- Auditoria: todos inserem, ninguém altera nem apaga (registro permanente)
 drop policy if exists fc_insert on public.auditoria;
 create policy fc_insert on public.auditoria for insert to authenticated with check (public.fc_role() <> 'nenhum');
--- Histórico permanente: medições não podem ser apagadas
+-- Medições e enlaces medidos: somente o Administrador apaga (independente de quem enviou)
 drop policy if exists fc_delete on public.medicoes;
+create policy fc_delete on public.medicoes for delete to authenticated using (public.fc_role() = 'admin');
 
 -- Perfis: o próprio usuário cria/edita o seu; admin gerencia todos
 drop policy if exists fc_insert on public.perfis; drop policy if exists fc_update on public.perfis;
@@ -138,4 +139,4 @@ drop policy if exists fc_anexos_write on storage.objects;
 drop policy if exists fc_anexos_delete on storage.objects;
 create policy fc_anexos_read on storage.objects for select to authenticated using (bucket_id = 'anexos' and public.fc_role() <> 'nenhum');
 create policy fc_anexos_write on storage.objects for insert to authenticated with check (bucket_id = 'anexos' and public.fc_has(array['admin','engenheiro','supervisor','tecnico']));
-create policy fc_anexos_delete on storage.objects for delete to authenticated using (bucket_id = 'anexos' and public.fc_has(array['admin','engenheiro']));
+create policy fc_anexos_delete on storage.objects for delete to authenticated using (bucket_id = 'anexos' and public.fc_role() = 'admin');

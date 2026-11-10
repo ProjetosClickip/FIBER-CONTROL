@@ -14,10 +14,8 @@
         'Subterrâneo': { max: 4, attention: 1.5 },
         'Misto': { max: 5, attention: 2 }
       },
-      allowPerLink: true, // permite tolerância individual por enlace
-      useApprovedFactor: false // classifica contra OZmap × fator aprovado (somente fatores aprovados)
+      allowPerLink: true // permite tolerância individual por enlace
     },
-    correction: { approved: {}, efl: 0.5, reserveM: 20, riseM: 8, curvePct: 0.5, detourPct: 0 },
     budget: {
       wavelengths: {
         1310: { att: 0.35 }, 1490: { att: 0.25 }, 1550: { att: 0.22 }, 1625: { att: 0.25 }, 1650: { att: 0.30 }, 1270: { att: 0.40 }, 1577: { att: 0.22 }
@@ -81,7 +79,8 @@
       { codigo: 'DC1', pop: 'DATA CENTER CLICKIP - SALA TELECOM 01', obs: 'Inferido (não estava na lista)' },
       { codigo: 'DC2', pop: 'DATA CENTER CLICKIP - SALA TELECOM 02', obs: 'Inferido (não estava na lista)' }
     ],
-    rede: { fator: 1.2 },    // fator fibra ÷ traçado desenhado, usado para localizar eventos no mapa // casamento caixa OZmap × evento OTDR
+    popsRede: [],            // POPs cadastrados no sistema (além dos do KMZ)
+    rede: { fator: 1.2 },    // relação fibra ÷ traçado desenhado (padrão), usada só para posicionar eventos no mapa
     notifications: { divergencia: true, certificacao: true, capacidade: true, piora: true, browser: false },
     regionRules: [
       { pattern: 'CTB|CWB|CURITIBA', regiao: 'Curitiba' },
@@ -104,23 +103,25 @@
   };
   FC.permissions = {
     'enlace.editar': ['admin', 'engenheiro', 'supervisor', 'tecnico'],
-    'enlace.excluir': ['admin', 'engenheiro'],
+    'enlace.excluir': ['admin'],
+    'medicao.excluir': ['admin'],
     'medicao.importar': ['admin', 'engenheiro', 'supervisor', 'tecnico'],
     'anexo.enviar': ['admin', 'engenheiro', 'supervisor', 'tecnico'],
     'anexo.baixar': ['admin', 'engenheiro', 'supervisor', 'tecnico', 'visualizador'],
     'anexo.excluir': ['admin', 'engenheiro'],
     'certificacao.aprovar': ['admin', 'engenheiro', 'supervisor'],
-    'fator.aprovar': ['admin', 'engenheiro'],
     'config.tecnica': ['admin', 'engenheiro'],
     'equipe.gerenciar': ['admin'],
     'relatorio.gerar': ['admin', 'engenheiro', 'supervisor', 'tecnico', 'visualizador'],
     'drive.usar': ['admin', 'engenheiro', 'supervisor'],
     'auditoria.ver': ['admin', 'engenheiro', 'supervisor']
   };
+  /** Permissões que só o Administrador pode ter (não podem ser repassadas na matriz) */
+  FC.adminOnly = ['enlace.excluir', 'medicao.excluir', 'equipe.gerenciar'];
   FC.permissionLabels = {
-    'enlace.editar': 'Cadastrar/editar enlaces e trechos', 'enlace.excluir': 'Excluir enlaces',
+    'enlace.editar': 'Cadastrar/editar enlaces e trechos', 'enlace.excluir': 'Excluir enlaces medidos (só Administrador)', 'medicao.excluir': 'Excluir medições (só Administrador)',
     'medicao.importar': 'Importar medições OTDR', 'anexo.enviar': 'Enviar anexos', 'anexo.baixar': 'Abrir/baixar anexos',
-    'anexo.excluir': 'Excluir anexos', 'certificacao.aprovar': 'Aprovar certificações', 'fator.aprovar': 'Aprovar fatores de correção',
+    'anexo.excluir': 'Excluir anexos', 'certificacao.aprovar': 'Aprovar certificações',
     'config.tecnica': 'Alterar parâmetros técnicos', 'equipe.gerenciar': 'Gerenciar equipe e permissões',
     'relatorio.gerar': 'Gerar relatórios', 'drive.usar': 'Usar integração Google Drive', 'auditoria.ver': 'Ver auditoria'
   };
@@ -138,7 +139,7 @@
     ['Leitura de PDF de relatório OTDR', 'local', 'Extrai o texto real com pdf.js e reconhece campos; o técnico confirma.'],
     ['Leitura de CSV/XLSX (OTDR e OZmap)', 'local', 'SheetJS com mapeamento de colunas.'],
     ['Leitura de imagem PNG/JPG (OCR)', 'local', 'Experimental: Tesseract.js; requer internet para baixar o idioma.'],
-    ['Cálculos (comparativo, orçamento, fator, capacidade)', 'local', 'Recalculados a cada alteração.'],
+    ['Cálculos (comparativo, orçamento, potência, capacidade)', 'local', 'Recalculados a cada alteração.'],
     ['Cadastro, histórico, certificação, auditoria', 'supabase', 'Navegador por padrão; Supabase quando configurado.'],
     ['Anexos (PDF, SOR, KMZ, fotos)', 'supabase', 'IndexedDB local; Supabase Storage quando configurado.'],
     ['Autenticação', 'supabase', 'Perfis locais (demonstração) ou Supabase Auth.'],
