@@ -53,7 +53,7 @@
     const sel = params.trechoId || (ts[0] || {}).id;
     if (params.tab) ckTab = params.tab;
     el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Campo</span><h1>Checklist de campo</h1><p class="muted small">Materiais usados e inspeção antes, durante e depois de cada medição. Funciona sem internet.</p></div></div>
-      <section class="panel"><div class="filters">${ui.field('Trecho', `<select id="ckt">${ts.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${U.esc((store.get('links', t.linkId) || {}).nome)} / ${U.esc(t.nome)}${store.state.checklists[t.id] && store.state.checklists[t.id].done ? ' ✓' : ''}${(t.materiais || []).length ? ' · ' + t.materiais.length + ' materiais' : ''}</option>`).join('')}</select>`, '', 'wide')}</div></section>
+      <section class="panel"><div class="filters">${ui.field('Trecho', `<select id="ckt">${ts.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${U.esc((store.get('links', t.linkId) || {}).nome)} / ${U.esc(t.nome)}${(t.inspecao || store.state.checklists[t.id] || {}).done ? ' ✓' : ''}${(t.materiais || []).length ? ' · ' + t.materiais.length + ' materiais' : ''}</option>`).join('')}</select>`, '', 'wide')}</div></section>
       <div class="tabs">${[['materiais', 'Materiais'], ['inspecao', 'Inspeção']].map(([k, l]) => `<button class="${ckTab === k ? 'on' : ''}" data-ck="${k}">${l}</button>`).join('')}</div><div id="ckb"></div>`;
     U.$$('[data-ck]', el).forEach(b => b.onclick = () => FC.go('checklist', { trechoId: sel, tab: b.dataset.ck }));
     if (!sel) { U.$('#ckb').innerHTML = '<section class="panel"><p class="muted">Cadastre um trecho primeiro.</p></section>'; return; }
@@ -97,16 +97,19 @@
   /* ----- Aba Inspeção (página original do checklist) ----- */
   function renderInspecao(t) {
     const sel = t.id;
-    const ck = store.state.checklists[sel] = store.state.checklists[sel] || { items: {}, done: false };
+    // a inspeção fica no próprio trecho: sincroniza com a equipe (antes ficava só neste aparelho)
+    if (!t.inspecao) { const antigo = store.state.checklists[sel]; t.inspecao = antigo ? U.clone(antigo) : { items: {}, done: false }; if (antigo) { delete store.state.checklists[sel]; store.upsert('trechos', t); } }
+    const ck = t.inspecao;
+    const grava = () => store.upsert('trechos', t);
     const total = Object.values(CHECK).flat().length;
     const draw = () => {
       const n = Object.values(ck.items).filter(Boolean).length;
       U.$('#ckb').innerHTML = `<section class="panel"><header><h3>${n} de ${total} itens</h3>${ck.done ? ui.badge('verde', 'Concluído por ' + ck.by + ' em ' + U.dt(ck.at)) : ui.badge('amarelo', 'Em andamento')}</header><div class="meter"><i style="width:${n / total * 100}%"></i></div>
         <div class="grid g3">${Object.entries(CHECK).map(([fase, items]) => `<div class="panel" style="background:var(--surface-2)"><h4>${fase}</h4>${items.map((it, i) => { const k = fase + '|' + i; return `<label class="check" style="padding:6px 0"><input type="checkbox" data-k="${U.esc(k)}" ${ck.items[k] ? 'checked' : ''}> ${U.esc(it)}</label>`; }).join('')}</div>`).join('')}</div>
         <div class="btn-row"><button class="btn primary" id="ckd" ${n === total ? '' : 'disabled'}>${ui.icon('check')}Concluir checklist</button><button class="btn ghost" id="ckr">Reiniciar</button><button class="btn" id="cki">${ui.icon('upload')}Importar teste deste trecho</button></div></section>`;
-      U.$$('[data-k]').forEach(c => c.onchange = () => { ck.items[c.dataset.k] = c.checked; if (!c.checked) ck.done = false; store.save(); draw(); });
-      U.$('#ckd').onclick = () => { Object.assign(ck, { done: true, by: store.user().nome, at: U.now() }); store.audit('concluiu', 'checklist', sel, 'Checklist de campo ' + t.nome); store.save(); ui.toast('Checklist concluído e registrado.', 'ok'); draw(); };
-      U.$('#ckr').onclick = () => { ck.items = {}; ck.done = false; store.save(); draw(); };
+      U.$$('[data-k]').forEach(c => c.onchange = () => { ck.items[c.dataset.k] = c.checked; if (!c.checked) ck.done = false; grava(); draw(); });
+      U.$('#ckd').onclick = () => { Object.assign(ck, { done: true, by: store.user().nome, at: U.now() }); store.audit('concluiu', 'checklist', sel, 'Checklist de campo ' + t.nome); grava(); ui.toast('Checklist concluído e registrado.', 'ok'); draw(); };
+      U.$('#ckr').onclick = () => { ck.items = {}; ck.done = false; delete ck.by; delete ck.at; grava(); draw(); };
       U.$('#cki').onclick = () => FC.go('otdr', { trechoId: sel, tab: 'individual' });
     };
     draw();

@@ -185,7 +185,7 @@
     if (c.requireAttachment) reqs.push({ k: 'Arquivo OTDR anexado (SOR ou PDF)', ok: (FC.store.state.attachments || []).some(a => a.trechoId === t.id && ['sor', 'pdf', 'msor'].includes(U.ext(a.nome))) || !!(m && m.attachmentId) });
     if (c.requireComparisonOk) { const cmp = C.compare(t, m || null); reqs.push({ k: 'Comparativo OTDR × OZmap ' + (c.allowAttention ? 'verde ou amarelo' : 'verde'), ok: cmp.status === 'verde' || (c.allowAttention && cmp.status === 'amarelo'), detail: cmp.status }); }
     if (c.requireBudgetOk) { const b = C.budget(t, m || null); reqs.push({ k: 'Perda dentro do orçamento' + (c.allowAttention ? ' (ou tolerância)' : ''), ok: b.status === 'ok' || (c.allowAttention && b.status === 'atencao'), detail: b.status }); }
-    if (c.requireChecklist) { const ck = FC.store.state.checklists[t.id]; reqs.push({ k: 'Checklist de campo concluído', ok: !!(ck && ck.done) }); }
+    if (c.requireChecklist) { const ck = t.inspecao || FC.store.state.checklists[t.id]; reqs.push({ k: 'Checklist de campo concluído', ok: !!(ck && ck.done) }); }
     return { reqs, ok: reqs.every(r => r.ok) };
   };
 

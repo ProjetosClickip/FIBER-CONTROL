@@ -27,6 +27,23 @@
   FC.samePops = (l, d) => !d.popA || !d.popB || !l || ((U.norm(l.popA) === U.norm(d.popA) && U.norm(l.popB) === U.norm(d.popB)) || (U.norm(l.popA) === U.norm(d.popB) && U.norm(l.popB) === U.norm(d.popA)));
 
   /** Persiste uma medição (cria enlace/trecho quando necessário). Retorna a medição. */
+  /** Curva do OTDR: do aparelho; se não estiver aqui (teste importado por outra pessoa), relê o .SOR guardado no Storage */
+  FC.getTrace = async (m) => {
+    if (!m || !m.hasTrace) return null;
+    let tr = await U.idb.get('traces', m.id).catch(() => null);
+    if (tr) return tr;
+    const att = m.attachmentId && store.get('attachments', m.attachmentId);
+    if (!att || I.kindOf(att.nome || m.fileName || '') !== 'SOR') return null;
+    try {
+      const blob = await store.getFile(att); if (!blob) return null;
+      const buf = await blob.arrayBuffer();
+      const rs = await I.readSOR(new File([buf], att.nome || 'teste.sor'), buf);
+      const r = rs.find(x => x.trace && x.draft && m.wavelength && Math.round(x.draft.wavelength) === Math.round(m.wavelength)) || rs.find(x => x.trace);
+      tr = r ? r.trace : null;
+      if (tr) await U.idb.put('traces', m.id, tr);
+      return tr;
+    } catch (e) { return null; }
+  };
   FC.saveMeasurement = async ({ res, derived, buf, file, fileName, hash, linkId, newLinkName, trechoId, newTrechoName, manual = {}, relPath }) => {
     const u = store.user();
     let link = linkId ? store.get('links', linkId) : null;
@@ -166,7 +183,7 @@
     const t = store.get('trechos', m.trechoId), l = store.get('links', m.linkId);
     const a = C.analyze(m, t);
     const icon = { excelente: 'star', ok: 'check', atencao: 'alert', reprovado: 'x', insuficiente: 'file' }[a.result];
-    const trace = m.hasTrace ? await U.idb.get('traces', m.id) : null;
+    const trace = await FC.getTrace(m);
     const prev = C.measurementsOf(m.trechoId).filter(x => x.id !== m.id && (x.data || '') < (m.data || '')).pop();
     out.innerHTML = `<section class="panel">
       <header><div><span class="eyebrow">Visão geral do teste</span><h2>${U.esc(l ? l.nome : '—')} <span class="muted">/ ${U.esc(t ? t.nome : '—')}</span>${ui.demo(m)}</h2><p class="small muted">${U.esc(m.fileName || 'Registro manual')} · ${U.esc(m.source)} · medido em ${U.dt(m.data)} por ${U.esc(m.responsavel || '—')}${m.equipamento ? ' · ' + U.esc(m.equipamento) : ''}</p></div>

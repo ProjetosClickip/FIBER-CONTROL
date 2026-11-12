@@ -140,21 +140,21 @@
     d.pops.forEach((p, pi) => {
       const lbl = codeOf[p.name] || short(p.name);
       L.circleMarker(p.pt, { radius: 8, color: '#002947', weight: 2, fillColor: projetado(p.estado) ? '#ffffff' : '#fe6218', fillOpacity: 1 })
-        .bindTooltip(lbl, { permanent: true, direction: 'right', className: 'mr-pop', offset: [8, 0] })
+        .bindTooltip(U.esc(lbl), { permanent: true, direction: 'right', className: 'mr-pop', offset: [8, 0] })
         .bindPopup(() => nodePopup(pi, true), { maxWidth: 320 })
         .addTo(L_.pops);
     });
     (store.state.settings.popsRede || []).forEach(p => {
       if (d.pops.some(x => x.name === p.nome)) return;
       L.circleMarker([p.lat, p.lng], { radius: 8, color: '#002947', weight: 2, fillColor: projetado(p.estado) ? '#ffffff' : '#fe6218', fillOpacity: 1, dashArray: '3 2' })
-        .bindTooltip(p.codigo || short(p.nome), { permanent: true, direction: 'right', className: 'mr-pop', offset: [8, 0] })
+        .bindTooltip(U.esc(p.codigo || short(p.nome)), { permanent: true, direction: 'right', className: 'mr-pop', offset: [8, 0] })
         .bindPopup(`<b>${U.esc(p.nome)}</b>${p.codigo ? ' <span class="tag">' + U.esc(p.codigo) + '</span>' : ''}<br>${U.esc(p.estado || '')} · cadastrado no sistema<br><span class="tiny">${p.lat.toFixed(6)}, ${p.lng.toFixed(6)} · ${U.esc(p.por || '')} ${U.date(p.em)}</span>${p.obs ? '<br><i>' + U.esc(p.obs) + '</i>' : ''}`)
         .addTo(L_.pops);
     });
     L_.pops.addTo(map);
     store.state.trechos.filter(t => t.coords && t.coords.length > 1).forEach(t => {
       const s = C.compare(t).status, p = ui.palette(), l = store.get('links', t.linkId) || {};
-      L.polyline(t.coords, { color: s === 'verde' ? p.ok : s === 'amarelo' ? p.warn : s === 'vermelho' ? p.bad : p.mute, weight: 6, opacity: .55 }).bindTooltip(`${l.nome} / ${t.nome}`).addTo(L_.trechos);
+      L.polyline(t.coords, { color: s === 'verde' ? p.ok : s === 'amarelo' ? p.warn : s === 'vermelho' ? p.bad : p.mute, weight: 6, opacity: .55 }).bindTooltip(`${U.esc(l.nome || '')} / ${U.esc(t.nome)}`).addTo(L_.trechos);
     });
     const caixasZoom = () => { const z = map.getZoom(); Object.entries(L_.caixas).forEach(([k, g]) => { const on = M.boxOn ? M.boxOn[k] !== false : true; if (z >= 14 && on) { if (!map.hasLayer(g)) { g.addTo(map); g.eachLayer(l => l.bringToFront()); } } else map.removeLayer(g); }); L_.pops.eachLayer(l => l.bringToFront()); U.$$('.mr-pop').forEach(t => t.style.display = z >= 12 ? '' : 'none'); };
     map.on('zoomend', caixasZoom);

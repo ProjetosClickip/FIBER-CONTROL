@@ -259,9 +259,14 @@
     }
     if (cfg.driveBackendUrl && !store.state.settings.drive.backendUrl) store.state.settings.drive.backendUrl = cfg.driveBackendUrl;
     const sb = store.state.settings.supabase;
+    await store.loadBase();
     if (sb.url && sb.anonKey && !store.state.settings.supabaseOff) {
+      store.wantRemote = true; // tudo o que for gravado sem conexão fica na fila para o Supabase
       try { await FC.supa.connect(sb.url, sb.anonKey); const { data } = await FC.supa.client.auth.getSession(); if (data.session) await FC.supa.pull(); else store.state.session = null; }
-      catch (e) { store.mode = 'local'; ui.toast('Supabase indisponível (' + e.message + '). Usando dados do navegador.', 'warn', 7000); }
+      catch (e) {
+        store.mode = 'local'; store.scheduleRetry();
+        ui.toast('Supabase indisponível agora (' + e.message + '). Você pode continuar: o que registrar fica guardado e é enviado sozinho quando a conexão voltar.', 'warn', 9000);
+      }
     }
     const u = store.user();
     if (u) { renderShell(); FC.go(location.hash.slice(1) || 'dashboard'); } else renderLogin();
