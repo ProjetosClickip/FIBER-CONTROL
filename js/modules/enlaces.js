@@ -300,14 +300,13 @@
   /* ---------- Lista ---------- */
   function renderList(el) {
     el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Cadastro</span><h1>Enlaces</h1><p class="muted small">Cada enlace reúne seus trechos, medições, anexos e certificações.</p></div>
-      <div class="acts"><button class="btn orange" id="impTest">${ui.icon('otdr')}Importar teste</button><button class="btn" id="impOz">${ui.icon('upload')}Importar planilha OZmap</button><button class="btn primary" id="newL">${ui.icon('plus')}Novo enlace</button></div></div>
+      <div class="acts"><button class="btn orange" id="impTest">${ui.icon('otdr')}Importar teste</button><button class="btn primary" id="newL">${ui.icon('plus')}Novo enlace</button></div></div>
       <section class="dz" id="ldz">${ui.icon('otdr')}<b>Arraste aqui o teste do OTDR (PDF do SmartOTDR, .SOR, .CSOR ou foto da tela)</b><span class="small muted">Origem e Extremidade viram os POPs; cabo, fibras, OS, técnico, distância, perda, ORL e eventos são preenchidos automaticamente.</span></section>
       <section class="panel">${FC.filt.html('e')}</section>
       <section class="panel" id="lt"></section>`;
     U.$('#newL').onclick = () => linkForm();
     U.$('#impTest').onclick = () => FC.importTest();
     ui.dropzone(U.$('#ldz'), (fs) => FC.importTest(null, fs));
-    U.$('#impOz').onclick = () => FC.go('fibras', { importar: true });
     FC.filt.bind(el, 'e', (r) => r ? FC.rerender() : draw());
     const draw = () => {
       const rows = FC.filt.links().map(l => Object.assign({ l }, FC.linkTotals(l)));
@@ -380,7 +379,7 @@
         { key: 'cap', label: 'Fibras livres', sort: t => t.fibrasRestantes, render: t => { const c = C.capacity(t); return `${c.rest == null ? '—' : c.rest + '/' + (t.caboFO || '?')} ${ui.capBadge(c.status)}`; } },
         { key: 'status', label: 'Status', sort: t => C.trechoStatus(t), render: t => ui.badge(C.trechoStatus(t)) },
         { key: 'anexos', label: 'Anexos', sortable: false, render: t => FC.attChips(t.id) },
-        { key: 'acts', label: '', sortable: false, render: t => `<div class="btn-row" style="flex-wrap:nowrap"><button class="btn sm ghost" data-a="edit" data-t="${t.id}" title="Editar">${ui.icon('edit')}</button><button class="btn sm ghost" data-a="att" data-t="${t.id}" title="Anexar">${ui.icon('upload')}</button><button class="btn sm ghost" data-a="otdr" data-t="${t.id}" title="Ver análise">${ui.icon('otdr')}</button><button class="btn sm ghost" data-a="qr" data-t="${t.id}" title="QR Code">${ui.icon('qr')}</button><button class="btn sm ghost" data-a="ck" data-t="${t.id}" title="Checklist">${ui.icon('list')}</button></div>` }
+        { key: 'acts', label: '', sortable: false, render: t => `<div class="btn-row" style="flex-wrap:nowrap"><button class="btn sm ghost" data-a="edit" data-t="${t.id}" title="Editar">${ui.icon('edit')}</button><button class="btn sm ghost" data-a="att" data-t="${t.id}" title="Anexar">${ui.icon('upload')}</button><button class="btn sm ghost" data-a="otdr" data-t="${t.id}" title="Ver análise">${ui.icon('otdr')}</button><button class="btn sm ghost" data-a="qr" data-t="${t.id}" title="QR Code">${ui.icon('qr')}</button></div>` }
       ]
     });
     const bindRow = () => {

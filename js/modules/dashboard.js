@@ -36,7 +36,7 @@
     el.innerHTML = `
       <div class="page-head"><div class="t"><span class="eyebrow">Visão geral</span><h1>Painel de enlaces</h1><p class="muted small">Indicadores recalculados a partir das medições e dos parâmetros configurados.</p></div>
       <div class="acts"><button class="btn primary" data-go="otdr">${ui.icon('upload')}Importar teste OTDR</button><button class="btn" data-go="enlaces">${ui.icon('plus')}Novo enlace</button></div></div>
-      ${st.meta.demo ? `<div class="note warn">${ui.icon('alert')}<div>Você está vendo <b>dados de demonstração</b> (selo DEMO). Remova-os em Configurações › Dados quando começar a usar com seus testes.</div></div>` : ''}
+      ${st.meta.demo ? `<div class="note warn">${ui.icon('alert')}<div>Você está vendo <b>dados de demonstração</b> (selo DEMO). Eles não aparecem para a equipe conectada ao Supabase.</div></div>` : ''}
       <section class="panel">${FC.filt.html('d')}</section>
       <section class="kpis" id="kpis"></section>
       <section class="grid g2">

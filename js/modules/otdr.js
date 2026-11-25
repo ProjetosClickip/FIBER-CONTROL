@@ -374,8 +374,8 @@
       }
       store.audit('importou', 'measurements', null, `Importação em lote: ${n} teste(s)`);
       batch = batch.filter(b => !b.sel || !b.res);
-      ui.toast(`${n} medição(ões) salvas e comparadas com o OZmap.`, 'ok');
-      FC.go('comparativo');
+      ui.toast(`${n} medição(ões) salvas.`, 'ok');
+      FC.go('historico');
     };
   }
   FC.batchAdd = batchAdd;
@@ -384,7 +384,7 @@
   function renderBudget(box, params) {
     const S = store.state.settings.budget;
     const wls = Object.keys(S.wavelengths);
-    box.innerHTML = `<section class="grid g2"><div class="panel"><header><h3>Calculadora de link budget</h3><span class="sub">Parâmetros editáveis em Configurações</span></header>
+    box.innerHTML = `<section class="grid g2"><div class="panel"><header><h3>Calculadora de link budget</h3></header>
       <div class="field"><span class="lbl">Carregar de um trecho medido</span><select id="bt"><option value="">— Manual —</option>${store.state.trechos.filter(t => C.latest(t.id)).map(t => `<option value="${t.id}" ${params.trechoId === t.id ? 'selected' : ''}>${U.esc((store.get('links', t.linkId) || {}).nome)} / ${U.esc(t.nome)}</option>`).join('')}</select></div>
       <form class="form-grid" id="bf">
         ${ui.field('Distância total (km)', ui.input('dist', '10', 'type="number" step="any" min="0"'))}

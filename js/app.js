@@ -98,13 +98,14 @@
   /* ---------- Estrutura ---------- */
   function renderShell() {
     const u = store.user();
-    const mainMods = FC.modules.filter(m => m.group === 'main'), toolMods = FC.modules.filter(m => m.group === 'tools');
+    const vis = (m) => !(FC.hiddenModules || []).includes(m.id);
+    const mainMods = FC.modules.filter(m => m.group === 'main' && vis(m)), toolMods = FC.modules.filter(m => m.group === 'tools' && vis(m));
     const navItem = (m) => `<a href="#${m.id}" data-mod="${m.id}" class="${m.field ? '' : 'office'}">${ui.icon(m.icon)}<span>${U.esc(m.title)}</span>${m.count ? `<span class="n" data-count="${m.id}" hidden></span>` : ''}</a>`;
     document.getElementById('root').innerHTML = `
     <div class="app">
       <aside class="side" id="side" aria-label="Menu principal">
         <div class="brand"><img src="${LOGO.dark}" alt="i_mais ClickIP"><div class="sys">Fiber<span>Control</span></div></div>
-        <nav class="nav">${mainMods.map(navItem).join('')}<div class="grp">Ferramentas</div>${toolMods.map(navItem).join('')}</nav>
+        <nav class="nav">${mainMods.map(navItem).join('')}${toolMods.length ? '<div class="grp">Ferramentas</div>' + toolMods.map(navItem).join('') : ''}</nav>
         <div class="side-foot">
           <span class="mode-pill ${store.mode === 'supabase' ? 'db' : ''}" id="modePill"><i></i>${store.mode === 'supabase' ? 'Conectado ao Supabase' : 'Dados neste navegador'}</span>
           <span>ClickIP FiberControl · v1.0</span>
@@ -120,7 +121,7 @@
             <div class="rel"><button class="icon-btn" id="bellBtn" aria-label="Notificações">${ui.icon('bell')}<span class="dot" id="bdot" hidden></span></button><div class="dropdown" id="bell" hidden></div></div>
             <button class="icon-btn ${store.state.settings.fieldMode ? 'on' : ''}" id="fieldBtn" title="Modo campo" aria-label="Alternar modo campo">${ui.icon('field')}</button>
             <button class="icon-btn hide-sm" id="themeBtn" title="Tema claro/escuro" aria-label="Alternar tema">${ui.icon('moon')}</button>
-            <button class="user-chip" id="userBtn" aria-label="Perfil">${FC.avatar(u)}<span class="who"><b>${U.esc(u.nome.split(' ')[0])}</b><small>${U.esc(FC.roles[u.role].label)}</small></span></button>
+            <div class="rel"><button class="user-chip" id="userBtn" aria-label="Perfil" aria-haspopup="menu">${FC.avatar(u)}<span class="who"><b>${U.esc(u.nome.split(' ')[0])}</b><small>${U.esc(FC.roles[u.role].label)}</small></span></button><div class="dropdown user-menu" id="userMenu" role="menu" hidden></div></div>
           </div>
         </header>
         <main class="page" id="page" tabindex="-1"></main>
@@ -128,21 +129,32 @@
     </div>
     <nav class="fieldbar" aria-label="Ações de campo">
       <button data-fb="otdr">${ui.icon('upload')}Importar teste</button>
-      <button data-fb="checklist">${ui.icon('list')}Checklist</button>
-      <button data-fb="enlaces" >${ui.icon('link')}Trechos</button>
-      <button data-fb="manut" class="main-act">${ui.icon('wrench')}Registrar</button>
+      <button data-fb="enlaces">${ui.icon('link')}Enlaces</button>
+      <button data-fb="mapa">${ui.icon('map')}Mapa</button>
+      <button data-fb="historico">${ui.icon('history')}Histórico</button>
     </nav>`;
     U.$('#menuBtn').onclick = () => document.body.classList.toggle('nav-open');
     U.$('#side').addEventListener('click', (e) => { if (e.target.closest('a')) document.body.classList.remove('nav-open'); });
     document.addEventListener('click', (e) => { if (document.body.classList.contains('nav-open') && !e.target.closest('.side') && !e.target.closest('#menuBtn')) document.body.classList.remove('nav-open'); });
     U.$('#themeBtn').onclick = () => { const next = FC.isDark() ? 'light' : 'dark'; store.setSettings('theme', next); FC.applyTheme(); FC.rerender(); };
     U.$('#fieldBtn').onclick = (e) => { store.setSettings('fieldMode', !store.state.settings.fieldMode, 'Modo campo'); FC.applyTheme(); e.currentTarget.classList.toggle('on', store.state.settings.fieldMode); ui.toast(store.state.settings.fieldMode ? 'Modo campo ativado: botões grandes e menu simplificado.' : 'Modo escritório ativado.', 'ok'); };
-    U.$('#userBtn').onclick = () => FC.go('configuracoes', { tab: 'perfil' });
+    // Menu do usuário: sair (todos) e, para o administrador, liberar o acesso de quem entra na equipe
+    const um = U.$('#userMenu');
+    U.$('#userBtn').onclick = (e) => {
+      e.stopPropagation();
+      if (!um.hidden) { um.hidden = true; return; }
+      um.innerHTML = `<div class="item" style="cursor:default">${FC.avatar(u)}<div><b>${U.esc(u.nome)}</b><br><small class="muted">${U.esc(u.email || '')} · ${U.esc(FC.roles[u.role].label)}</small></div></div>
+        ${u.role === 'admin' ? `<div class="item" role="menuitem" tabindex="0" data-um="acessos">${ui.icon('team')}<div>Acessos da equipe<br><small class="muted">Liberar quem criou conta e definir o nível de cada um</small></div></div>` : ''}
+        <div class="item" role="menuitem" tabindex="0" data-um="sair">${ui.icon('logout')}<div>Sair</div></div>`;
+      um.hidden = false;
+      U.$$('[data-um]', um).forEach(it => it.onclick = () => { um.hidden = true; if (it.dataset.um === 'sair') FC.logout(); else FC.go('equipe', { menu: true }); });
+    };
+    document.addEventListener('click', (e) => { if (!um.hidden && !e.target.closest('#userMenu')) um.hidden = true; });
     U.$('#syncBtn').onclick = async () => {
       if (store.mode !== 'supabase') return ui.toast('Modo navegador: tudo já está salvo neste aparelho. Conecte o Supabase para sincronizar entre aparelhos.', 'info', 6000);
       const n = await store.flushQueue(); await FC.supa.pull(); ui.toast(`Sincronizado. ${n} pendência(s) enviada(s).`, 'ok'); FC.rerender();
     };
-    U.$$('.fieldbar button').forEach(b => b.onclick = () => { const k = b.dataset.fb; if (k === 'manut') FC.go('manutencao', { novo: true }); else FC.go(k); });
+    U.$$('.fieldbar button').forEach(b => b.onclick = () => FC.go(b.dataset.fb));
     setupSearch(); setupBell(); updateNet();
     store.on((w) => { if (w === 'net' || w === 'queue') updateNet(); if (w === 'change') { refreshCounts(); } });
     refreshCounts();
@@ -160,6 +172,12 @@
   FC.go = (id, params = {}) => {
     if (/^tr-/.test(id)) { params = { trechoId: 'tr_' + id.slice(3) }; id = 'enlaces'; }
     if (/^lnk-/.test(id)) { params = { linkId: 'lnk_' + id.slice(4) }; id = 'enlaces'; }
+    // Abas retiradas: o que apontava para elas abre o lugar equivalente (o trecho no Enlaces, ou o Painel)
+    if ((FC.hiddenModules || []).includes(id) && !(id === 'equipe' && (store.user() || {}).role === 'admin' && params.menu)) {
+      const t = params.trechoId && store.get('trechos', params.trechoId);
+      if (['comparativo', 'fibras', 'checklist', 'manutencao'].includes(id)) { params = t ? { linkId: t.linkId } : {}; id = 'enlaces'; }
+      else { params = {}; id = 'dashboard'; }
+    }
     const mod = FC.modules.find(m => m.id === id) || FC.modules[0];
     FC.route = { id: mod.id, params };
     if (location.hash.slice(1) !== mod.id) history.replaceState(null, '', '#' + mod.id);

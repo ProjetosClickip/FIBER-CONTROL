@@ -279,3 +279,6 @@ body.field .fieldbar { display: grid; grid-template-columns: repeat(4, 1fr); pos
 .ocr-img { margin: 0; position: sticky; top: 0 } .ocr-img img { width: 100%; max-height: 460px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: #000 }
 #itev input { min-height: 32px; padding: 4px 6px } #itev input[type=checkbox] { min-height: auto }
 @media (max-width: 760px) { .ocr-grid { grid-template-columns: minmax(0, 1fr) } .ocr-img { position: static } }
+
+/* Menu do usuário */
+.user-menu { width: min(300px, calc(100vw - 32px)); z-index: 1400 } .user-menu .item { align-items: center } .user-menu .avatar { width: 22px; height: 22px; font-size: .6rem }

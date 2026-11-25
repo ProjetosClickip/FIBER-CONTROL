@@ -6,12 +6,11 @@
 
   function render(el, params) {
     el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Qualidade</span><h1>Certificações</h1><p class="muted small">Um trecho só pode ser certificado quando os requisitos técnicos configurados forem atendidos e a aprovação for registrada.</p></div>
-      <div class="acts"><button class="btn" id="req">${ui.icon('gear')}Requisitos</button><button class="btn" id="rc">${ui.icon('report')}Relatório de certificação</button></div></div>
+      <div class="acts"><button class="btn" id="rc">${ui.icon('report')}Relatório de certificação</button></div></div>
       <section class="panel"><header><h3>Percentual de certificação</h3><div class="seg">${[['projeto', 'Por projeto'], ['enlace', 'Por enlace'], ['regiao', 'Por região']].map(([k, l]) => `<button class="${groupBy === k ? 'on' : ''}" data-g="${k}">${l}</button>`).join('')}</div></header><div class="grid g2"><div class="chart-box"><canvas id="cg"></canvas></div><div id="cgt"></div></div></section>
       <section class="panel">${FC.filt.html('ce')}<div class="filters">${ui.field('Status', ui.select('cst', [['', 'Todos'], ['pendente', 'Pendente'], ['medido', 'Medido'], ['divergente', 'Divergente'], ['certificado', 'Certificado']], ''))}</div></section>
       <section class="panel" id="ctb"></section>`;
     U.$$('[data-g]', el).forEach(b => b.onclick = () => { groupBy = b.dataset.g; FC.rerender(); });
-    U.$('#req').onclick = () => FC.go('configuracoes', { tab: 'tecnico' });
     U.$('#rc').onclick = () => FC.go('relatorios', { tipo: 'certificacao' });
     FC.filt.bind(el, 'ce', (r) => r ? FC.rerender() : draw());
     U.$('#cst').onchange = () => draw();

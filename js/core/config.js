@@ -117,6 +117,9 @@
     'auditoria.ver': ['admin', 'engenheiro', 'supervisor']
   };
   /** Permissões que só o Administrador pode ter (não podem ser repassadas na matriz) */
+  /* Abas retiradas do sistema (o código fica, mas não aparecem no menu nem abrem pela URL).
+   * Para trazer uma de volta, basta tirar o id desta lista. */
+  FC.hiddenModules = ['potencia', 'comparativo', 'fibras', 'drive', 'equipe', 'sobre', 'configuracoes', 'checklist', 'manutencao', 'auditoria'];
   FC.adminOnly = ['enlace.excluir', 'medicao.excluir', 'equipe.gerenciar'];
   FC.permissionLabels = {
     'enlace.editar': 'Cadastrar/editar enlaces e trechos', 'enlace.excluir': 'Excluir enlaces medidos (só Administrador)', 'medicao.excluir': 'Excluir medições (só Administrador)',
