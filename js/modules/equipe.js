@@ -20,7 +20,7 @@
         if (u.id === store.user().id && f.role !== 'admin' && !store.state.users.some(x => x.id !== u.id && x.role === 'admin' && x.ativo)) { ui.toast('Mantenha ao menos um Administrador ativo.', 'err'); return false; }
         const oldRole = u.role;
         Object.assign(u, { nome: f.nome.trim(), email: f.email.trim(), role: f.role, fone: f.fone, ativo: f.ativo });
-        if (f.senha) { if (f.senha.length < 6) { ui.toast('A senha precisa de 6+ caracteres.', 'err'); return false; } u.senha = await U.sha256('fc|' + U.norm(u.email) + '|' + f.senha); }
+        if (f.senha) { if (f.senha.length < 6) { ui.toast('A senha precisa de 6+ caracteres.', 'err'); return false; } u.senha = await FC.hashPass(u.email, f.senha); }
         store.upsert('users', u, `${isNew ? 'Novo membro' : 'Membro editado'}: ${u.nome}${oldRole && oldRole !== u.role ? ` (perfil ${FC.roles[oldRole].label} → ${FC.roles[u.role].label})` : ''}`);
         FC.rerender();
       } }]

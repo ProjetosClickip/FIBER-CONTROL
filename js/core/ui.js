@@ -50,6 +50,7 @@
     layers: '<path d="M12 3 2 8l10 5 10-5z"/><path d="M2 13l10 5 10-5"/>',
     star: '<path d="M12 3l2.8 5.8 6.2.9-4.5 4.4 1 6.3L12 17.4 6.5 20.4l1-6.3L3 9.7l6.2-.9z"/>',
     folder: '<path d="M3 6h6l2 2h10v11H3z"/>',
+    image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 16-5-5-8 8"/>',
     camera: '<path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/>'
   };
   ui.icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.file}</svg>`;
@@ -112,7 +113,7 @@
       const pages = Math.max(1, Math.ceil(data.length / pageSize));
       st.page = Math.min(st.page, pages - 1);
       const slice = data.slice(st.page * pageSize, st.page * pageSize + pageSize);
-      el.innerHTML = `<div class="table-scroll"><table class="tbl" ${id ? `id="${id}"` : ''}><thead><tr>${columns.map(c => `<th class="${c.num ? 'num' : ''} ${c.sortable === false ? '' : 'sortable'}" data-k="${c.key}" ${c.key === st.key ? `aria-sort="${st.dir === 'asc' ? 'ascending' : 'descending'}"` : ''}>${U.esc(c.label)}${c.key === st.key ? (st.dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+      el.innerHTML = `<div class="table-scroll"><table class="tbl cards" ${id ? `id="${id}"` : ''}><thead><tr>${columns.map(c => `<th class="${c.num ? 'num' : ''} ${c.sortable === false ? '' : 'sortable'}" data-k="${c.key}" ${c.key === st.key ? `aria-sort="${st.dir === 'asc' ? 'ascending' : 'descending'}"` : ''}>${U.esc(c.label)}${c.key === st.key ? (st.dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
         <tbody>${slice.length ? slice.map((r, i) => `<tr data-i="${st.page * pageSize + i}" class="${rowClass ? rowClass(r) : ''} ${onRow ? 'clickable' : ''}">${columns.map(c => `<td class="${c.num ? 'num' : ''}" data-label="${U.esc(c.label)}">${c.render ? c.render(r) : U.esc(r[c.key])}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${columns.length}" class="empty">${U.esc(empty)}</td></tr>`}</tbody></table></div>
         ${pages > 1 ? `<div class="pager"><button class="btn sm ghost" data-pg="-1" ${st.page ? '' : 'disabled'}>Anterior</button><span>${st.page + 1} / ${pages} · ${data.length} registros</span><button class="btn sm ghost" data-pg="1" ${st.page < pages - 1 ? '' : 'disabled'}>Próxima</button></div>` : ''}`;
       el._data = data;
@@ -191,12 +192,19 @@
   ui.formData = (root) => { const o = {}; U.$$('input,select,textarea', root).forEach(i => { if (!i.name) return; o[i.name] = i.type === 'checkbox' ? i.checked : i.value; }); return o; };
 
   /* ---------- Arquivo: seletor programático ---------- */
-  ui.pickFiles = ({ accept = '', multiple = false, directory = false } = {}) => new Promise(res => {
-    const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.multiple = multiple;
+  ui.pickFiles = ({ accept = '', multiple = false, directory = false, capture = '' } = {}) => new Promise(res => {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.multiple = multiple; if (capture) i.setAttribute('capture', capture);
     if (directory) { i.webkitdirectory = true; i.multiple = true; }
     i.onchange = () => res(Array.from(i.files || [])); i.click();
   });
 
+  /** Escolha entre opções (botões grandes, bom no celular). Resolve com a chave escolhida ou null */
+  ui.choose = (title, text, opts) => new Promise(res => {
+    let done = false;
+    ui.modal({ title, body: `<p>${U.esc(text)}</p><div class="choose">${opts.map(([k, l]) => `<button class="btn" data-ch="${U.esc(k)}">${U.esc(l)}</button>`).join('')}</div>`,
+      onOpen: (b, close) => U.$$('[data-ch]', b).forEach(x => x.onclick = () => { done = true; res(x.dataset.ch); close(); }),
+      onClose: () => { if (!done) res(null); }, actions: [{ label: 'Cancelar', cls: 'ghost' }] });
+  });
   /** Zona de soltar arquivos */
   ui.dropzone = (el, onFiles) => {
     el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag'); });
@@ -253,7 +261,7 @@
       let xml;
       if (U.ext(name) === 'kmz') {
         if (!window.JSZip) throw new Error('Biblioteca JSZip não carregada.');
-        const zip = await JSZip.loadAsync(blob); const f = Object.values(zip.files).find(f => /\.kml$/i.test(f.name));
+        const zip = U.zipGuard(await JSZip.loadAsync(blob)); const f = Object.values(zip.files).find(f => /\.kml$/i.test(f.name));
         if (!f) throw new Error('KMZ sem arquivo KML interno.'); xml = await f.async('text');
       } else xml = await blob.text();
       const doc = new DOMParser().parseFromString(xml, 'application/xml');

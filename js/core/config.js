@@ -99,7 +99,8 @@
     engenheiro: { label: 'Engenheiro', level: 4 },
     supervisor: { label: 'Supervisor', level: 3 },
     tecnico: { label: 'Técnico de campo', level: 2 },
-    visualizador: { label: 'Visualizador', level: 1 }
+    visualizador: { label: 'Visualizador', level: 1 },
+    pendente: { label: 'Aguardando liberação', level: 0 } // conta nova: não vê nada até o administrador liberar
   };
   FC.permissions = {
     'enlace.editar': ['admin', 'engenheiro', 'supervisor', 'tecnico'],

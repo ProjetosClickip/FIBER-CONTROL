@@ -22,7 +22,7 @@
       <div class="panel"><header><h3>Acesso</h3></header>
       <form class="form-grid" id="ef">${ui.field('E-mail', ui.input('email', u.email, 'type="email"'), store.mode === 'supabase' ? 'O Supabase envia um link de confirmação para o novo e-mail.' : 'Confirme com a senha atual.')}${store.mode === 'local' ? ui.field('Senha atual', ui.input('cur', '', 'type="password" autocomplete="current-password"')) : ''}</form><button class="btn" id="esv">Alterar e-mail</button>
       <form class="form-grid" id="sf">${store.mode === 'local' ? ui.field('Senha atual', ui.input('cur2', '', 'type="password" autocomplete="current-password"')) : ''}${ui.field('Nova senha', ui.input('n1', '', 'type="password" minlength="6" autocomplete="new-password"'))}${ui.field('Confirmar nova senha', ui.input('n2', '', 'type="password" autocomplete="new-password"'))}</form><button class="btn" id="ssv">Alterar senha</button></div></section>`;
-    const verify = async (pass) => store.mode === 'supabase' || (u.senha && u.senha === await U.sha256('fc|' + U.norm(u.email) + '|' + pass));
+    const verify = async (pass) => store.mode === 'supabase' || FC.checkPass(u, u.email, pass);
     U.$('#ph').onclick = async () => {
       const [f] = await ui.pickFiles({ accept: 'image/*' }); if (!f) return;
       const img = new Image(); img.src = await U.readAsDataURL(f); await img.decode();
@@ -37,14 +37,14 @@
       const f = ui.formData(U.$('#ef')); if (!/^\S+@\S+\.\S+$/.test(f.email)) return ui.toast('E-mail inválido.', 'err');
       if (store.state.users.some(x => x.id !== u.id && U.norm(x.email) === U.norm(f.email))) return ui.toast('E-mail já usado por outro membro.', 'err');
       if (store.mode === 'supabase') { try { await FC.supa.updateAuth({ email: f.email }); ui.toast('Confirme a alteração pelo link enviado ao novo e-mail.', 'ok', 7000); } catch (e) { return ui.toast(e.message, 'err'); } }
-      else { if (!(await verify(f.cur))) return ui.toast('Senha atual incorreta.', 'err'); const pass = f.cur; u.senha = await U.sha256('fc|' + U.norm(f.email) + '|' + pass); }
+      else { if (!(await verify(f.cur))) return ui.toast('Senha atual incorreta.', 'err'); const pass = f.cur; u.senha = await FC.hashPass(f.email, pass); }
       const old = u.email; u.email = f.email; store.upsert('users', u, `E-mail: ${old} → ${u.email}`); ui.toast('E-mail atualizado.', 'ok');
     };
     U.$('#ssv').onclick = async () => {
       const f = ui.formData(U.$('#sf'));
       if (f.n1.length < 6) return ui.toast('A nova senha precisa de 6+ caracteres.', 'err'); if (f.n1 !== f.n2) return ui.toast('As senhas não conferem.', 'err');
       if (store.mode === 'supabase') { try { await FC.supa.updateAuth({ password: f.n1 }); } catch (e) { return ui.toast(e.message, 'err'); } }
-      else { if (!(await verify(f.cur2))) return ui.toast('Senha atual incorreta.', 'err'); u.senha = await U.sha256('fc|' + U.norm(u.email) + '|' + f.n1); }
+      else { if (!(await verify(f.cur2))) return ui.toast('Senha atual incorreta.', 'err'); u.senha = await FC.hashPass(u.email, f.n1); }
       store.upsert('users', u, 'Senha alterada'); U.$('#sf').reset(); ui.toast('Senha alterada.', 'ok');
     };
   }

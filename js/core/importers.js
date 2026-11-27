@@ -15,7 +15,7 @@
     ocrLang: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/por@1.0.0/4.0.0_best_int'
   };
   I.accept = '.sor,.msor,.csor,.pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg';
-  I.kindOf = (name) => { const e = U.ext(name); return e === 'sor' || e === 'msor' || e === 'csor' ? 'SOR' : e === 'pdf' ? 'PDF' : e === 'csv' ? 'CSV' : (e === 'xlsx' || e === 'xls') ? 'XLSX' : ['png', 'jpg', 'jpeg'].includes(e) ? 'IMG' : null; };
+  I.kindOf = (name) => { const e = U.ext(name); return e === 'sor' || e === 'msor' || e === 'csor' ? 'SOR' : e === 'pdf' ? 'PDF' : e === 'csv' ? 'CSV' : (e === 'xlsx' || e === 'xls') ? 'XLSX' : ['png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'].includes(e) ? 'IMG' : null; };
 
   /* ---------- Derivação automática dos dados do enlace a partir do teste ---------- */
   I.derive = ({ gen = {}, fileName = '', relPath = '', text = '' }) => {
@@ -71,7 +71,7 @@
     let parts;
     const u8 = new Uint8Array(buf, 0, 4);
     if (u8[0] === 0x50 && u8[1] === 0x4B && window.JSZip) { // contêiner ZIP (ex.: .csor/.msor) com vários .sor dentro
-      const zip = await JSZip.loadAsync(buf);
+      const zip = U.zipGuard(await JSZip.loadAsync(buf), 200);
       parts = await Promise.all(Object.values(zip.files).filter(f => !f.dir && /\.sor$/i.test(f.name)).map(f => f.async('arraybuffer')));
       if (!parts.length) throw new Error('Contêiner sem arquivos .sor internos');
     } else parts = SORParser.splitMulti(buf);
@@ -105,7 +105,7 @@
     else { const mm = num(/(?:Fiber\s*Length|Link\s*Length|Comprimento(?:\s*total)?|Dist[âa]ncia\s*total)\s*[:=]?\s*([\d.,]+)\s*m\b/i); if (mm != null) { d.lengthM = mm; found.push('Comprimento'); } }
     const loss = num(/(?:Total\s*Loss|Link\s*Loss|Span\s*Loss|Perda\s*total|Atenua[çc][ãa]o\s*total|End.to.end\s*loss)\s*[:=]?\s*(-?[\d.,]+)\s*dB/i);
     if (loss != null) { d.totalLoss = Math.abs(loss); d.totalLossOrigin = 'arquivo'; found.push('Perda total'); }
-    const orl = num(/\bORL\s*[:=]?\s*([\d.,]+)\s*dB/i); if (orl != null) { d.orl = orl; found.push('ORL'); }
+    const orl = num(/\bORL\s*[:=]?\s*(\d{1,2}[.,]\d{1,3})/i) ?? num(/\bORL\s*[:=]?\s*([\d.,]+)\s*dB/i); if (orl != null) { d.orl = orl; found.push('ORL'); }
     const ior = num(/(?:IOR|[ÍI]ndice\s*de\s*refra[çc][ãa]o|Refractive\s*Index)\s*[:=]?\s*(1[.,]\d{3,6})/i); if (ior) { d.ior = ior; found.push('IOR'); }
     const pw = num(/(?:Pulse(?:\s*Width)?|Pulso)\s*[:=]?\s*([\d.,]+)\s*ns/i); if (pw) d.pulseNs = pw;
     // Tabela de eventos: "N  dist(km)  perda(dB)  refl(dB)" em linhas
@@ -215,57 +215,7 @@
     return [{ kind: 'PDF', ok: f.found.length > 0, draft: Object.assign({ source: 'PDF', gen: {} }, f.d), extracted: f.found, missing: f.missing, warnings: ['Valores extraídos do texto do PDF: confira antes de salvar.'], text }];
   };
 
-  /* ---------- Foto da tela do OTDR / do relatório (OCR) ---------- */
-  /** Prepara a foto para o OCR: amplia, converte para cinza, inverte tela escura e reforça o contraste */
-  I.prepImage = async (file) => {
-    const url = URL.createObjectURL(file);
-    try {
-      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('Imagem inválida ou formato não suportado pelo navegador')); i.src = url; });
-      const k = Math.min(3, Math.max(1, 2200 / Math.max(img.width, 1)));
-      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
-      const g = cv.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, cv.width, cv.height);
-      const id = g.getImageData(0, 0, cv.width, cv.height), px = id.data, n = px.length / 4, hist = new Uint32Array(256);
-      let soma = 0;
-      for (let i = 0; i < n; i++) { const y = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]); px[i * 4] = y; hist[y]++; soma += y; }
-      const escuro = soma / n < 110; // tela do OTDR com fundo escuro: inverte para texto preto em fundo claro
-      let lo = 0, hi = 255, acc = 0; for (; lo < 255 && (acc += hist[lo]) < n * 0.01; lo++); acc = 0; for (; hi > 0 && (acc += hist[hi]) < n * 0.01; hi--);
-      const amp = Math.max(1, hi - lo);
-      for (let i = 0; i < n; i++) { let y = (px[i * 4] - lo) * 255 / amp; y = y < 0 ? 0 : y > 255 ? 255 : y; if (escuro) y = 255 - y; px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = y; px[i * 4 + 3] = 255; }
-      g.putImageData(id, 0, 0);
-      return { canvas: cv, escuro, w: img.width, h: img.height };
-    } finally { URL.revokeObjectURL(url); }
-  };
-  /** Corrige trocas comuns do OCR dentro de números (O→0, l/I→1, S→5, B→8) */
-  I.ocrFix = (t) => String(t || '').replace(/(?<=[\d,.\-])[Oo](?=[\d,.]|\b)|(?<=\b)[Oo](?=[,.]\d)/g, '0').replace(/(?<=\d)[lI|](?=\d)|(?<=[\s(])[lI](?=[,.]\d)/g, '1').replace(/(?<=\d[,.]?)S(?=\d)/g, '5').replace(/(?<=\d)B(?=\d)/g, '8').replace(/[‐–—]/g, '-');
-  /** Linhas do OCR no mesmo formato do leitor posicional de PDF (permite reaproveitar a leitura do relatório Viavi) */
-  I.ocrRows = (data) => (data.lines || []).map(l => {
-    const items = (l.words || []).filter(w => w.text && w.text.trim()).map(w => ({ s: I.ocrFix(w.text.trim()), x: w.bbox.x0, w: w.bbox.x1 - w.bbox.x0, y: -w.bbox.y0 }));
-    return { page: 1, y: items.length ? items[0].y : 0, items, text: items.map(i => i.s).join(' ') };
-  }).filter(r => r.items.length);
-  let ocrWorker = null;
-  I.ocrEngine = async (onProgress) => {
-    await U.loadScript(LIB.ocr);
-    if (!ocrWorker) ocrWorker = window.Tesseract.createWorker('por', 1, { workerPath: LIB.ocrWorker, corePath: LIB.ocrCore, langPath: LIB.ocrLang, logger: m => I._ocrLog && m.progress != null && I._ocrLog(m.status, m.progress) }).catch(e => { ocrWorker = null; throw e; });
-    I._ocrLog = onProgress;
-    return ocrWorker;
-  };
-  /** Campos do cabeçalho da tela/relatório lidos por rótulo (Origem, Extremidade, Ident. Cabo, Fibra, OS, Técnico) */
-  I.genFromText = (text) => {
-    const gen = {}, t = text.replace(/[ \t]+/g, ' ');
-    const pick = (re) => { const m = t.match(re); return m ? m[1].replace(/\s{2,}.*$/, '').trim().replace(/[|;]+$/, '').trim() : null; };
-    const fim = '(?=\\s{2,}|\\s+(?:Extremidade|Origem|Ident|ID d|Fibra|OS|T[ée]cnico|Data|Location|Cable|Fiber|Job|Operator)\\b|\\n|$)';
-    gen.locationA = pick(new RegExp('(?:Origem|Location\\s*A|Local\\s*A|Ponta\\s*A)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
-    gen.locationB = pick(new RegExp('(?:Extremidade|Location\\s*B|Local\\s*B|Ponta\\s*B|Destino)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
-    gen.cableId = pick(new RegExp('(?:Ident\\.?\\s*(?:do\\s*)?Cabo|Cable\\s*ID|ID\\s*do\\s*cabo)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
-    gen.fiberId = pick(new RegExp('(?:ID\\s*da\\s*Fibra(?:\\s*/\\s*N[úu]mero)?|Fiber\\s*(?:ID|Number))\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
-    gen.os = pick(new RegExp('(?:ID\\s*da\\s*OS|Job\\s*ID|\\bOS)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
-    gen.operator = pick(new RegExp('(?:ID\\s*do\\s*T[ée]cnico|Operador|Operator|T[ée]cnico)\\s*[:=.]?\\s*(.+?)' + fim, 'i'));
-    Object.keys(gen).forEach(k => { if (!gen[k] || gen[k].length < 2 || gen[k].length > 60) { delete gen[k]; return; } gen[k] = gen[k].replace(/^0(?=[A-Z]{2})/, ''); });
-    if (gen.fiberId) gen.fiberId = gen.fiberId.replace(/^([A-Z]{1,2})[Oo](?=\d+$)/, (x, a) => a + '0'); // "FO7" → "F07"
-    if (gen.os) { gen.project = gen.os; gen.projectSrc = 'ID da OS (foto)'; }
-    const eq = t.match(/(SmartOTDR[^\n]{0,30}|MTS[- ]?\d{3,4}\w*|FTB[- ]?\d{3,4}\w*|AQ\d{4}\w*)/i); if (eq) gen.equipment = eq[1].trim();
-    return gen;
-  };
+  /* Foto (OCR): ver js/core/ocr.js. Abaixo, leitura por texto para telas de outros fabricantes. */
   /** Tabela de eventos de uma tela de OTDR (ou relatório): N  distância  perda  refletância  ... */
   I.eventsFromOcr = (rows) => {
     const hi = rows.findIndex(r => /Dist/i.test(r.text) && /(Perda|Loss|Atten)/i.test(r.text));
@@ -285,45 +235,6 @@
     const out = evs.filter(e => e.dist >= 0 && Math.abs(e.loss) < 30).map(e => ({ n: e.n, distM: emM ? e.dist : e.dist * 1000, loss: Math.abs(e.loss) < 30 ? e.loss : 0, reflectance: e.refl != null ? e.refl : 0, kind: e.refl != null ? 'refletivo' : 'nao-refletivo', end: false, slope: 0, ocr: true }));
     out.sort((a, b) => a.distM - b.distM);
     return out;
-  };
-
-  I.readImage = async (file, onProgress) => {
-    onProgress && onProgress('Preparando a imagem', 0.05);
-    const prep = await I.prepImage(file);
-    const w = await I.ocrEngine((s, p) => onProgress && onProgress(s, 0.1 + p * 0.85));
-    await w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }).catch(() => {});
-    const { data } = await w.recognize(prep.canvas);
-    const text = I.ocrFix(data.text || '');
-    const rows = I.ocrRows(data);
-    onProgress && onProgress('Interpretando', 0.97);
-    // 1º: foto do relatório PDF do Viavi (mesmos rótulos); 2º: tela do equipamento
-    let v = null; try { v = I.parseViaviPDF(rows); } catch (e) { v = null; }
-    const f = I.fieldsFromText(text);
-    const d = Object.assign({ source: 'IMG', gen: {} }, f.d);
-    const found = f.found.slice();
-    if (v) { ['wavelength', 'lengthM', 'totalLoss', 'totalLossOrigin', 'orl', 'ior', 'avgAtt', 'data', 'equipamento', 'fiberType', 'operadorOTDR'].forEach(k => { if (v.d[k] != null && d[k] == null) d[k] = v.d[k]; }); if (v.d.events.length > d.events.length) d.events = v.d.events; Object.assign(d.gen, v.d.gen); v.found.forEach(x => found.includes(x) || found.push(x)); }
-    const g2 = I.genFromText(text); Object.keys(g2).forEach(k => { if (!d.gen[k]) d.gen[k] = g2[k]; });
-    ['os', 'project', 'cableId', 'fiberId', 'operator'].forEach(k => { if (typeof d.gen[k] === 'string') d.gen[k] = d.gen[k].replace(/^0(?=[A-Z]{2})/, ''); });
-    if (d.gen.fiberId) d.gen.fiberId = d.gen.fiberId.replace(/^([A-Z]{1,2})[Oo](?=\d+$)/, (x, a) => a + '0');
-    if (d.gen.locationA && !found.includes('Origem/Extremidade')) found.push('Origem/Extremidade');
-    if (d.gen.cableId && !found.includes('Ident. cabo')) found.push('Ident. cabo');
-    const ev = I.eventsFromOcr(rows);
-    // escolhe a leitura de eventos mais completa (quantidade e refletâncias lidas)
-    const nota = (l) => (l || []).length * 10 + (l || []).filter(e => e.kind === 'refletivo').length;
-    if (nota(ev) > nota(d.events)) d.events = ev;
-    for (let i = found.length - 1; i >= 0; i--) if (/eventos/.test(found[i])) found.splice(i, 1);
-    if (d.events.length) found.push(d.events.length + ' eventos');
-    if (d.events.length) {
-      const last = d.events[d.events.length - 1];
-      if (d.lengthM == null) { d.lengthM = last.distM; found.push('Fim da fibra (último evento)'); }
-      if (Math.abs(last.distM - d.lengthM) < Math.max(5, d.lengthM * 0.002)) last.end = true;
-      if (d.totalLoss == null) { const cum = U.sum(d.events.filter(e => !e.end), e => +e.loss || 0); if (cum > 0) { d.totalLoss = +cum.toFixed(3); d.totalLossOrigin = 'soma dos eventos (foto)'; found.push('Perda total (soma dos eventos)'); } }
-    }
-    if (!d.equipamento && d.gen.equipment) d.equipamento = d.gen.equipment;
-    if (!d.operadorOTDR && d.gen.operator) d.operadorOTDR = d.gen.operator;
-    const missing = [];
-    if (d.lengthM == null) missing.push('Comprimento total'); if (!d.wavelength) missing.push('Comprimento de onda'); if (d.totalLoss == null) missing.push('Atenuação total'); if (!d.orl) missing.push('ORL'); if (!d.events.length) missing.push('Eventos'); if (!d.gen.locationA) missing.push('Origem/Extremidade');
-    return [{ kind: 'IMG', format: 'Foto da tela/relatório (OCR' + (prep.escuro ? ', tela escura invertida' : '') + ')', ok: found.length > 0, draft: d, extracted: found, missing, warnings: ['Leitura por foto (OCR): confira cada valor e a tabela de eventos com a tela do equipamento antes de salvar.'], text, conf: data.confidence }];
   };
 
   /* ---------- Planilhas ---------- */

@@ -282,3 +282,58 @@ body.field .fieldbar { display: grid; grid-template-columns: repeat(4, 1fr); pos
 
 /* Menu do usuário */
 .user-menu { width: min(300px, calc(100vw - 32px)); z-index: 1400 } .user-menu .item { align-items: center } .user-menu .avatar { width: 22px; height: 22px; font-size: .6rem }
+
+/* Envio de testes (aba Enlaces) */
+.up-panel { display: grid; gap: 12px; padding: 16px; border: 2px dashed var(--line-2); border-radius: var(--r); background: var(--surface) }
+.up-panel.drag { border-color: var(--teal); background: var(--surface-2) }
+.up-head { display: flex; gap: 12px; align-items: flex-start } .up-head > .ic { width: 28px; height: 28px; color: var(--teal); flex: none } .up-head div { display: grid; gap: 2px }
+.up-btns { display: flex; flex-wrap: wrap; gap: 8px } .up-drop { justify-self: start }
+.choose { display: grid; gap: 8px; margin-top: 10px } .choose .btn { justify-content: flex-start; min-height: 48px; font-size: .95rem }
+@media (max-width: 760px) { .up-btns { display: grid; grid-template-columns: 1fr 1fr } .up-btns .btn { min-height: 52px; justify-content: center; white-space: normal; text-align: center } .up-drop { display: none } }
+
+/* Mapa: diagrama da caixa e situação dos cabos */
+.mr-diag { display: grid; grid-template-columns: 20px 1fr; gap: 6px; padding: 8px; margin: 8px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2) }
+.mr-diag .mr-pp-btns { grid-column: 1 / -1 } .mr-pp-btns a.btn { text-decoration: none } .mr-sit { display: grid; gap: 2px }
+
+/* Relatórios: células editáveis da prévia */
+.rp-ed { outline: 1px dashed var(--line-2); outline-offset: -3px; cursor: text } .rp-ed:focus { outline: 2px solid var(--teal); background: var(--surface) } .rp-mud { background: var(--warn-bg) !important; font-weight: 600 }
+
+/* ================= Celular (revisão de usabilidade) ================= */
+[hidden] { display: none !important }
+@media (max-width: 760px) {
+  /* barra de navegação inferior sempre visível no celular */
+  .fieldbar { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: var(--navy); padding: 6px max(6px, env(safe-area-inset-right, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px)); gap: 4px; box-shadow: 0 -4px 16px rgba(0,0,0,.25) }
+  .fieldbar button { display: flex; flex-direction: column; align-items: center; gap: 3px; background: transparent; border: 0; color: #d6e4ef; font: 600 .72rem var(--font-body); padding: 7px 2px; border-radius: 10px; min-height: 52px }
+  .fieldbar button .ic { width: 22px; height: 22px } .fieldbar button.main-act { background: var(--orange); color: #fff }
+  .page { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) }
+  /* toques confortáveis */
+  .btn { min-height: 44px } .btn.sm { min-height: 38px } input, select, textarea { font-size: 16px } /* 16px evita o zoom automático do iPhone */
+  .page-head { flex-wrap: wrap } .page-head .acts { width: 100% } .page-head .acts .btn { flex: 1 1 auto; justify-content: center }
+  .filters .field, .filters .field.wide { width: 100% }
+  .tabs { flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none } .tabs button { white-space: nowrap; padding: 12px 12px }
+  /* tabelas viram cartões (cada linha um cartão com rótulos) */
+  .tbl.cards thead { display: none } .tbl.cards, .tbl.cards tbody { display: block }
+  .tbl.cards tr { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 10px 12px; margin: 0 0 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface) }
+  .tbl.cards td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border: 0; padding: 3px 0; text-align: right; min-width: 0 }
+  .tbl.cards td::before { content: attr(data-label); color: var(--fg-3); font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; text-align: left; flex: none; max-width: 45% }
+  .tbl.cards td:first-child { display: block; text-align: left; font-size: 1rem } .tbl.cards td:first-child::before { display: none }
+  .tbl.cards td[data-label=""]::before { display: none } .tbl.cards td[data-label=""] { justify-content: flex-end }
+  .tbl.cards tr.row-bad { border-left: 4px solid var(--bad) } .tbl.cards tr.row-ok { border-left: 4px solid var(--ok) } .tbl.cards tr.row-warn { border-left: 4px solid var(--warn) }
+  .table-scroll:has(.tbl.cards) { overflow: visible; border: 0 }
+  /* janelas (importação etc.) em tela cheia, botões fixos embaixo */
+  .modal-wrap { padding: 0; place-items: stretch }
+  .modal, .modal.wide { width: 100%; max-height: none; height: 100dvh; border-radius: 0 }
+  .modal header { position: sticky; top: 0; background: var(--surface); z-index: 2; padding-top: max(14px, env(safe-area-inset-top, 0px)) }
+  .modal footer { position: sticky; bottom: 0; background: var(--surface); padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); box-shadow: 0 -6px 16px rgba(0,0,0,.08) }
+  .modal footer .btn { flex: 1 1 40%; min-height: 50px; justify-content: center; font-size: 1rem }
+  .modal .form-grid { grid-template-columns: minmax(0, 1fr) }
+  /* avisos no topo, sem cobrir os botões */
+  #toasts { top: calc(64px + env(safe-area-inset-top, 0px)); bottom: auto !important; left: 12px; right: 12px !important } #toasts .toast { max-width: none; font-size: .86rem; padding: 10px 12px }
+  /* mapa: ocupa a tela; painel abaixo, abas roláveis */
+  .mr-grid { grid-template-columns: minmax(0, 1fr) !important } .mr-map { height: 62vh !important; min-height: 340px !important }
+  .mr-side .tabs { overflow-x: auto }
+  .leaflet-popup-content { max-width: 78vw } .leaflet-popup-content .mr-pp-btns .btn { min-height: 40px }
+  .up-panel { padding: 14px }
+}
+/* painel lateral do mapa: abas não cortam em telas médias */
+.mr-side .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin } .mr-side .tabs button { white-space: nowrap; padding: 10px 10px }

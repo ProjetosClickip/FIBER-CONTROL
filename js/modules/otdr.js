@@ -77,8 +77,9 @@
   function render(el, params) {
     if (params.measurementId || params.trechoId) tab = 'individual';
     if (params.tab) tab = params.tab;
-    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Módulo de destaque</span><h1>Análise OTDR</h1><p class="muted small">Leitura real de .SOR (Telcordia SR-4731), PDF, CSV/XLSX e imagem. O que não puder ser extraído é indicado para preenchimento manual.</p></div></div>
-      <div class="tabs" role="tablist">${[['individual', 'Análise individual'], ['lote', 'Importação em lote'], ['budget', 'Orçamento de perda'], ['lista', 'Medições registradas']].map(([k, l]) => `<button role="tab" class="${tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
+    if (tab === 'lote') tab = 'lista';
+    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Módulo de destaque</span><h1>Análise OTDR</h1><p class="muted small">Análise dos testes enviados na aba Enlaces: resultado, eventos, curva e comparação.</p></div></div>
+      <div class="tabs" role="tablist">${[['individual', 'Análise do teste'], ['lista', 'Testes registrados'], ['budget', 'Orçamento de perda']].map(([k, l]) => `<button role="tab" class="${tab === k ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
       <div id="otab"></div>`;
     U.$$('[data-tab]', el).forEach(b => b.onclick = () => { tab = b.dataset.tab; FC.route.params = {}; FC.go('otdr', { tab }); });
     const box = U.$('#otab', el);
@@ -88,10 +89,13 @@
   /* ---------- Individual ---------- */
   function renderIndividual(box, params) {
     let m = params.measurementId ? store.get('measurements', params.measurementId) : params.trechoId ? C.latest(params.trechoId) : null;
-    box.innerHTML = `<section class="panel"><div class="dz" id="dz">${ui.icon('upload')}<b>Arraste o teste do OTDR aqui</b><span class="small muted">PDF do SmartOTDR, .SOR / .CSOR: enlace, POPs (Origem/Extremidade), cabo, fibras, OS e medição são preenchidos automaticamente. Também aceita CSV, XLSX e foto da tela.</span><div class="btn-row"><button class="btn primary" id="pick">Selecionar arquivo</button><button class="btn" id="manual">${ui.icon('edit')}Registrar manualmente</button></div></div></section><div id="ares"></div>`;
-    ui.dropzone(U.$('#dz', box), (fs) => fs[0] && handleFile(fs[0], params));
-    U.$('#pick', box).onclick = async () => { const [f] = await ui.pickFiles({ accept: I.accept }); f && handleFile(f, params); };
-    U.$('#manual', box).onclick = () => reviewImport({ kind: 'MANUAL', ok: true, draft: { source: 'MANUAL', events: [], gen: {} }, extracted: [], missing: ['Todos os campos (registro manual)'], warnings: [] }, null, { name: 'registro-manual' }, null, params);
+    const ms = store.state.measurements.slice().sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+    if (!m) m = ms[0] || null;
+    const lab = (x) => { const l = store.get('links', x.linkId) || {}, t = store.get('trechos', x.trechoId) || {}; return `${l.nome || '?'} / ${t.nome || '?'} · ${U.date(x.data)} · ${x.wavelength || '?'} nm · ${x.fileName || x.source}`; };
+    box.innerHTML = `<section class="panel"><div class="filters">${ui.field('Teste', `<select id="msel">${ms.map(x => `<option value="${x.id}" ${m && x.id === m.id ? 'selected' : ''}>${U.esc(lab(x))}</option>`).join('')}</select>`, '', 'wide')}
+      <div class="field"><span class="lbl">&nbsp;</span><button class="btn" id="goUp">${ui.icon('upload')}Subir teste (aba Enlaces)</button></div></div></section><div id="ares">${ms.length ? '' : '<section class="panel"><p class="muted">Nenhum teste enviado ainda. Suba o teste na aba Enlaces.</p></section>'}</div>`;
+    U.$('#goUp', box).onclick = () => FC.go('enlaces');
+    const s = U.$('#msel', box); s && (s.onchange = () => FC.go('otdr', { tab: 'individual', measurementId: s.value }));
     if (m) showAnalysis(U.$('#ares', box), m);
   }
 
@@ -375,10 +379,12 @@
       store.audit('importou', 'measurements', null, `Importação em lote: ${n} teste(s)`);
       batch = batch.filter(b => !b.sel || !b.res);
       ui.toast(`${n} medição(ões) salvas.`, 'ok');
-      FC.go('historico');
+      const w = U.$('#lotebox'); const mw = w && w.closest('.modal-wrap'); if (mw) mw.remove();
+      FC.go('enlaces');
     };
   }
   FC.batchAdd = batchAdd;
+  FC.renderBatch = renderBatch;
 
   /* ---------- Orçamento de perda ---------- */
   function renderBudget(box, params) {

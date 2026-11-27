@@ -35,11 +35,34 @@
   const BOX_COLORS = { CEO: '#002947', CEOS: '#01a09c', CTO: '#0f9d6b', CDO: '#7b5cff' };
   const boxColor = (b) => BOX_COLORS[(b.categoria || '').toUpperCase()] || '#8a96a3';
   const projetado = (estado) => /projeto|n[aã]o implantad/i.test(estado || '');
+  /** Situação de implantação normalizada (para o filtro de cabos) */
+  const situ = (estado) => { const e = String(estado || '').trim(); return e ? e.charAt(0).toUpperCase() + e.slice(1).toLowerCase() : 'Sem informação'; };
+  /** Links do Google Maps para o ponto (abrir o local e traçar rota até ele) */
+  const gmaps = (pt) => { const ll = (+pt[0]).toFixed(6) + ',' + (+pt[1]).toFixed(6); return { ver: 'https://www.google.com/maps/search/?api=1&query=' + ll, rota: 'https://www.google.com/maps/dir/?api=1&destination=' + ll }; };
+  const gmLinks = (pt) => { const g = gmaps(pt); return `<a class="btn sm orange" target="_blank" rel="noopener noreferrer" href="${g.ver}">${ui.icon('map')}Google Maps</a><a class="btn sm" target="_blank" rel="noopener noreferrer" href="${g.rota}">Rota até aqui</a>`; };
+  /** Diagrama da caixa: chave pelo código (CEO-1019, CTO-55…) ou pelo nome */
+  const boxKey = (name) => { const m = String(name || '').match(/\b(CEO|CTO|CEOS|CEF|CE|CX|TAP|FOSC|ARM|DIO|EMENDA)[\s_-]?(\d{1,6}[A-Z]?)\b/i); return m ? (m[1] + '-' + m[2]).toUpperCase() : FC.bb.norm(name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').toUpperCase(); };
+  const diagramOf = (key) => store.state.attachments.filter(a => a.categoria === 'Diagrama de caixa' && a.caixa === key).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0] || null;
+  FC.boxKey = boxKey; FC.diagramOf = diagramOf;
+  FC.mapaRede = { cabosVisiveis: () => M.map ? Object.values(M.layers.cabos).filter(g => M.map.hasLayer(g)).reduce((n, g) => n + g.getLayers().filter(l => l.options.interactive !== false).length, 0) : 0 };
+  async function uploadDiagram(key, nome, files) {
+    if (!store.require('anexo.enviar')) return 0;
+    files = files || await ui.pickFiles({ accept: '.pdf,.png,.jpg,.jpeg,.webp', multiple: false });
+    let n = 0;
+    for (const f of files) {
+      if (f.size > 30 * 1048576) { ui.toast(f.name + ': máximo 30 MB.', 'err'); continue; }
+      if (!/\.(pdf|png|jpe?g|webp)$/i.test(f.name)) { ui.toast(f.name + ': envie PDF ou imagem.', 'err'); continue; }
+      await store.putFile(f, { categoria: 'Diagrama de caixa', caixa: key, caixaNome: nome || key, linkId: null, trechoId: null });
+      store.audit('enviou', 'attachments', key, 'Diagrama da caixa ' + (nome || key) + ': ' + f.name); n++;
+    }
+    return n;
+  }
 
   /* ---------- Carregar a rede ---------- */
   async function parseFile(blob, name) {
     let xml;
-    if (/\.kmz$/i.test(name)) { const z = await JSZip.loadAsync(blob); const f = Object.values(z.files).find(f => /\.kml$/i.test(f.name)); if (!f) throw new Error('KMZ sem arquivo KML interno'); xml = await f.async('text'); }
+    if (blob.size > 100 * 1048576) throw new Error('Arquivo da rede muito grande (máximo 100 MB).');
+    if (/\.kmz$/i.test(name)) { const z = U.zipGuard(await JSZip.loadAsync(blob)); const f = Object.values(z.files).find(f => /\.kml$/i.test(f.name)); if (!f) throw new Error('KMZ sem arquivo KML interno'); xml = await f.async('text'); }
     else xml = await blob.text();
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
     if (doc.querySelector('parsererror')) throw new Error('KML inválido');
@@ -115,18 +138,21 @@
     const L_ = M.layers = { cabos: {}, caixas: {}, pops: L.layerGroup(), trechos: L.layerGroup() };
     FO_COLORS.forEach(([, , lab]) => L_.cabos[lab] = L.layerGroup().addTo(map));
     // cabos: destaque ao passar o mouse, painel completo ao clicar
+    M.cabRefs = [];
     d.cables.forEach((c, ci) => {
       const bk = foBucket(c.fo), lab = bk ? bk[2] : 'Sem capacidade';
       L_.cabos[lab] = L_.cabos[lab] || L.layerGroup().addTo(map);
       const w = c.fo >= 48 ? 3.5 : c.fo >= 24 ? 2.8 : 2.2, cor = foColor(c.fo), branco = cor === '#ffffff', dash = projetado(c.estado) ? '6 6' : (!bk ? '2 5' : null);
-      if (branco) L.polyline(c.coords, { color: '#3a3a3a', weight: w + 2.2, opacity: .9, dashArray: dash, interactive: false }).addTo(L_.cabos[lab]);
+      const contorno = branco ? L.polyline(c.coords, { color: '#3a3a3a', weight: w + 2.2, opacity: .9, dashArray: dash, interactive: false }).addTo(L_.cabos[lab]) : null;
       const pl = L.polyline(c.coords, { color: cor, weight: w, opacity: 1, dashArray: dash });
+      const ref = { lab, sit: situ(c.estado), ls: [pl] }; M.cabRefs.push(ref);
       pl.on('mouseover', () => { pl.setStyle({ weight: w + 4 }); pl.bringToFront(); });
       pl.on('mouseout', () => pl.setStyle({ weight: w }));
       pl.bindTooltip(`${U.esc(c.name)} · ${c.fo ? c.fo + 'FO' : 'sem capacidade'}`, { sticky: true, className: 'mr-tip' });
       pl.bindPopup(() => cablePopup(ci), { maxWidth: 320 });
-      pl.addTo(L_.cabos[lab]);
+      pl.addTo(L_.cabos[lab]); if (contorno) ref.ls.unshift(contorno);
     });
+    M.sitOn = M.sitOn || {}; applySit();
     // caixas por categoria (a partir do zoom 14), com os cabos ligados a cada uma
     d.boxes.forEach((b, bi) => {
       const k = (b.categoria || 'Outras').toUpperCase(); L_.caixas[k] = L_.caixas[k] || L.layerGroup();
@@ -148,7 +174,7 @@
       if (d.pops.some(x => x.name === p.nome)) return;
       L.circleMarker([p.lat, p.lng], { radius: 8, color: '#002947', weight: 2, fillColor: projetado(p.estado) ? '#ffffff' : '#fe6218', fillOpacity: 1, dashArray: '3 2' })
         .bindTooltip(U.esc(p.codigo || short(p.nome)), { permanent: true, direction: 'right', className: 'mr-pop', offset: [8, 0] })
-        .bindPopup(`<b>${U.esc(p.nome)}</b>${p.codigo ? ' <span class="tag">' + U.esc(p.codigo) + '</span>' : ''}<br>${U.esc(p.estado || '')} · cadastrado no sistema<br><span class="tiny">${p.lat.toFixed(6)}, ${p.lng.toFixed(6)} · ${U.esc(p.por || '')} ${U.date(p.em)}</span>${p.obs ? '<br><i>' + U.esc(p.obs) + '</i>' : ''}`)
+        .bindPopup(`<b>${U.esc(p.nome)}</b>${p.codigo ? ' <span class="tag">' + U.esc(p.codigo) + '</span>' : ''}<br>${U.esc(p.estado || '')} · cadastrado no sistema<br><span class="tiny">${p.lat.toFixed(6)}, ${p.lng.toFixed(6)} · ${U.esc(p.por || '')} ${U.date(p.em)}</span>${p.obs ? '<br><i>' + U.esc(p.obs) + '</i>' : ''}<div class="mr-pp-btns">${gmLinks([p.lat, p.lng])}</div>`)
         .addTo(L_.pops);
     });
     L_.pops.addTo(map);
@@ -177,7 +203,7 @@
     // botão direito / toque longo: coordenadas do ponto
     map.on('contextmenu', (e) => {
       const la = e.latlng.lat.toFixed(6), lo = e.latlng.lng.toFixed(6);
-      L.popup().setLatLng(e.latlng).setContent(`<b>${la}, ${lo}</b><div class="mr-pp-btns"><button class="btn sm" data-copy="${la}, ${lo}">Copiar</button><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${la},${lo}">Google Maps</a></div>`).openOn(map);
+      L.popup().setLatLng(e.latlng).setContent(`<b>${la}, ${lo}</b><div class="mr-pp-btns"><button class="btn sm" data-copy="${la}, ${lo}">Copiar</button>${gmLinks([la, lo])}</div>`).openOn(map);
     });
     const fitAll = () => map.fitBounds(L.latLngBounds(d.pops.map(p => p.pt).concat(d.cables.flatMap(c => [c.coords[0], c.coords[c.coords.length - 1]]))).pad(.05));
     fitAll();
@@ -188,12 +214,18 @@
       U.$$('[data-popa]', n).forEach(b => b.onclick = () => { M.tool.a = b.dataset.popa; M.tool.routes = []; side('teste'); map.closePopup(); });
       U.$$('[data-popb]', n).forEach(b => b.onclick = () => { M.tool.b = b.dataset.popb; M.tool.routes = []; side('teste'); map.closePopup(); });
       U.$$('[data-evsel]', n).forEach(b => b.onclick = () => { toggleSel(+b.dataset.evsel); map.closePopup(); });
+      U.$$('[data-diagv]', n).forEach(b => b.onclick = () => { const a = store.get('attachments', b.dataset.diagv); a && ui.openAttachment(a); });
+      U.$$('[data-diagu]', n).forEach(b => b.onclick = async () => { const k = await uploadDiagram(b.dataset.diagu, b.dataset.diagn); if (k) { ui.toast('Diagrama ligado à caixa ' + b.dataset.diagn + '.', 'ok'); map.closePopup(); } });
       U.$$('[data-copy]', n).forEach(b => b.onclick = () => navigator.clipboard.writeText(b.dataset.copy).then(() => ui.toast('Coordenadas copiadas.', 'ok'), () => ui.toast('Copie manualmente: ' + b.dataset.copy, 'warn')));
       U.$$('[data-zoomc]', n).forEach(b => b.onclick = () => { const c = M.rede.data.cables[+b.dataset.zoomc]; map.fitBounds(L.latLngBounds(c.coords).pad(.3)); });
       U.$$('[data-gonode]', n).forEach(b => b.onclick = () => { const nd = graph().nodes[+b.dataset.gonode]; map.setView(nd.pt, Math.max(map.getZoom(), 17)); });
     });
   }
   /** Popup do cabo: dados + caixas/POPs nas pontas */
+  /** Mostra só os cabos das situações marcadas (Implantado, Em projeto…) */
+  function applySit() {
+    (M.cabRefs || []).forEach(r => { const on = M.sitOn[r.sit] !== false, g = M.layers.cabos[r.lab]; r.ls.forEach(l => on ? (g.hasLayer(l) || l.addTo(g)) : g.removeLayer(l)); });
+  }
   function cablePopup(ci) {
     const g = graph(), c = M.rede.data.cables[ci], e = g.edges.find(x => x.cable === ci);
     const ends = e ? [g.nodes[e.a], g.nodes[e.b]] : [];
@@ -211,7 +243,13 @@
     return `<div class="mr-pp"><b>${U.esc(n.name)}</b>${code ? ` <span class="tag">${U.esc(code)}</span>` : ''}<br><span class="small">${U.esc(ref.tipo || (isPop ? 'POP' : ''))}</span> · <span class="small">${U.esc(ref.estado || '')}</span>
       <p class="tiny muted">${n.pt[0].toFixed(6)}, ${n.pt[1].toFixed(6)}</p>
       ${cabos.length ? `<p class="tiny muted">${cabos.length} cabo(s) ligado(s):</p>${cabos.slice(0, 8).map(x => `<a href="#" class="mr-pp-link" data-zoomc="${x.e.cable}">${x.c.fo || '?'}FO → ${U.esc(x.other.kind === 'JUNCAO' ? 'ponta sem caixa' : x.other.name)} <span class="muted">(${U.m(x.c.len, 0)})</span></a>`).join('')}` : '<p class="tiny muted">Nenhum cabo ligado a menos de 30 m.</p>'}
-      <div class="mr-pp-btns"><button class="btn sm" data-copy="${n.pt[0].toFixed(6)}, ${n.pt[1].toFixed(6)}">Copiar coordenadas</button>${isPop ? `<button class="btn sm" data-popa="${U.esc(n.name)}">Origem</button><button class="btn sm" data-popb="${U.esc(n.name)}">Destino</button>` : ''}</div></div>`;
+      ${!isPop ? diagramBlock(n.name) : ''}
+      <div class="mr-pp-btns">${gmLinks(n.pt)}<button class="btn sm" data-copy="${n.pt[0].toFixed(6)}, ${n.pt[1].toFixed(6)}">Copiar coordenadas</button>${isPop ? `<button class="btn sm" data-popa="${U.esc(n.name)}">Origem</button><button class="btn sm" data-popb="${U.esc(n.name)}">Destino</button>` : ''}</div></div>`;
+  }
+  function diagramBlock(name) {
+    const key = boxKey(name), a = diagramOf(key);
+    return `<div class="mr-diag">${ui.icon('file')}<div><b>Diagrama da caixa</b><br>${a ? `<span class="tiny">${U.esc(a.nome)} · ${U.date(a.createdAt)}</span>` : '<span class="tiny muted">Nenhum diagrama enviado</span>'}</div>
+      <div class="mr-pp-btns">${a ? `<button class="btn sm primary" data-diagv="${a.id}">Ver diagrama</button>` : ''}${store.can('anexo.enviar') ? `<button class="btn sm" data-diagu="${U.esc(key)}" data-diagn="${U.esc(name)}">${a ? 'Trocar' : 'Enviar diagrama'}</button>` : ''}</div></div>`;
   }
   function fullscreen() { const el = U.$('.mr-grid'); try { document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().then(() => setTimeout(() => M.map.invalidateSize(), 200)); } catch (e) { ui.toast('Tela cheia não disponível aqui.', 'warn'); } }
   function gps() {
@@ -224,9 +262,9 @@
   function side(tab) {
     if (tab) sideTab = tab;
     const box = U.$('#mrSide'); if (!box) return;
-    box.innerHTML = `<div class="tabs">${[['pops', 'POPs'], ['teste', 'Teste OTDR'], ['camadas', 'Camadas'], ['buscar', 'Buscar'], ['codigos', 'Códigos']].map(([k, l]) => `<button class="${sideTab === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div><div id="mrTab"></div><p class="tiny muted" id="mrNote"></p>`;
+    box.innerHTML = `<div class="tabs">${[['pops', 'POPs'], ['teste', 'Teste OTDR'], ['camadas', 'Camadas'], ['diagramas', 'Diagramas'], ['buscar', 'Buscar'], ['codigos', 'Códigos']].map(([k, l]) => `<button class="${sideTab === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div><div id="mrTab"></div><p class="tiny muted" id="mrNote"></p>`;
     U.$$('[data-st]', box).forEach(b => b.onclick = () => side(b.dataset.st));
-    ({ pops: tabPops, teste: tabTeste, camadas: tabCamadas, buscar: tabBuscar, codigos: () => { U.$('#mrTab').innerHTML = codesHTML(); bindCodes(); } })[sideTab]();
+    ({ pops: tabPops, teste: tabTeste, camadas: tabCamadas, diagramas: tabDiagramas, buscar: tabBuscar, codigos: () => { U.$('#mrTab').innerHTML = codesHTML(); bindCodes(); } })[sideTab]();
   }
 
   /* ---------- POPs: todos os POPs da rede (KMZ + cadastrados), seleção e cadastro ---------- */
@@ -294,15 +332,47 @@
     const cnt = (g) => g.getLayers().length;
     const grupos = FO_COLORS.map(([, col, lab]) => [col, lab]).concat(L_.cabos['Sem capacidade'] ? [[SEM_FO, 'Sem capacidade']] : []);
     const nCab = (g) => g.getLayers().filter(l => l.options.interactive !== false).length;
-    U.$('#mrTab').innerHTML = `<h4>Cabos por capacidade</h4>${grupos.map(([col, lab]) => `<label class="check"><input type="checkbox" data-lc="${lab}" ${map.hasLayer(L_.cabos[lab]) ? 'checked' : ''}><span class="mr-sw" style="background:${col};${col === '#ffffff' ? 'outline:1px solid #3a3a3a' : ''}"></span>${lab} <span class="muted tiny">(${nCab(L_.cabos[lab])})</span></label>`).join('')}
+    const sits = {}; (M.cabRefs || []).forEach(r => { sits[r.sit] = (sits[r.sit] || 0) + 1; });
+    const sitHtml = `<h4>Situação do cabo</h4><div class="mr-sit">${Object.entries(sits).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<label class="check"><input type="checkbox" data-sit="${U.esc(k)}" ${M.sitOn[k] !== false ? 'checked' : ''}>${U.esc(k)} <span class="muted">(${n})</span></label>`).join('')}</div>
+      <div class="btn-row"><button class="btn sm ghost" data-sitall="1">Todos</button>${Object.keys(sits).map(k => `<button class="btn sm ghost" data-sitonly="${U.esc(k)}">Só ${U.esc(k.toLowerCase())}</button>`).join('')}</div>`;
+    U.$('#mrTab').innerHTML = sitHtml + `<h4>Cabos por capacidade</h4>${grupos.map(([col, lab]) => `<label class="check"><input type="checkbox" data-lc="${lab}" ${map.hasLayer(L_.cabos[lab]) ? 'checked' : ''}><span class="mr-sw" style="background:${col};${col === '#ffffff' ? 'outline:1px solid #3a3a3a' : ''}"></span>${lab} <span class="muted tiny">(${nCab(L_.cabos[lab])})</span></label>`).join('')}
       <p class="tiny muted">Linha tracejada = cabo em projeto / não implantado.</p>
       <h4>Caixas <span class="tiny muted">(a partir do zoom 14)</span></h4>${Object.keys(L_.caixas).sort().map(k => `<label class="check"><input type="checkbox" data-lb="${U.esc(k)}" ${M.boxOn[k] !== false ? 'checked' : ''}><span class="mr-sw round" style="background:${BOX_COLORS[k] || '#8a96a3'}"></span>${U.esc(k)} <span class="muted tiny">(${cnt(L_.caixas[k])})</span></label>`).join('')}
       <h4>Outros</h4><label class="check"><input type="checkbox" id="lpPops" ${map.hasLayer(L_.pops) ? 'checked' : ''}><span class="mr-sw round" style="background:#fe6218"></span>POPs (${cnt(L_.pops)})</label>
       <label class="check"><input type="checkbox" id="lpTr" ${map.hasLayer(L_.trechos) ? 'checked' : ''}><span class="mr-sw" style="background:var(--ok)"></span>Trechos cadastrados (${cnt(L_.trechos)})</label>`;
     U.$$('[data-lc]').forEach(c => c.onchange = () => c.checked ? L_.cabos[c.dataset.lc].addTo(map) : map.removeLayer(L_.cabos[c.dataset.lc]));
+    U.$$('[data-sit]').forEach(c => c.onchange = () => { M.sitOn[c.dataset.sit] = c.checked; applySit(); });
+    U.$$('[data-sitall]').forEach(b => b.onclick = () => { M.sitOn = {}; applySit(); tabCamadas(); });
+    U.$$('[data-sitonly]').forEach(b => b.onclick = () => { Object.keys(sits).forEach(k => { M.sitOn[k] = k === b.dataset.sitonly; }); applySit(); tabCamadas(); });
     U.$$('[data-lb]').forEach(c => c.onchange = () => { M.boxOn[c.dataset.lb] = c.checked; M.caixasZoom(); });
     U.$('#lpPops').onchange = (e) => e.target.checked ? L_.pops.addTo(map) : map.removeLayer(L_.pops);
     U.$('#lpTr').onchange = (e) => e.target.checked ? L_.trechos.addTo(map) : map.removeLayer(L_.trechos);
+  }
+
+  /** Diagramas das caixas: envio em lote (o nome do arquivo indica a caixa, ex.: CEO-1019.pdf) e lista */
+  function tabDiagramas() {
+    const boxes = M.rede.data.boxes, keys = new Map(boxes.map(b => [boxKey(b.name), b]));
+    const diags = store.state.attachments.filter(a => a.categoria === 'Diagrama de caixa');
+    const comD = [...new Set(diags.map(a => a.caixa))];
+    U.$('#mrTab').innerHTML = `<p class="small">Envie os diagramas (PDF ou imagem). Cada arquivo é ligado à caixa pelo código no nome: <b>CEO-1019.pdf</b>, <b>CTO 55.jpg</b>…</p>
+      ${store.can('anexo.enviar') ? `<button class="btn primary" id="dgUp" style="width:100%">${ui.icon('upload')}Enviar diagramas</button>` : ''}
+      <p class="tiny muted">${comD.length} de ${keys.size} caixas com diagrama.</p><input id="dgQ" type="search" placeholder="Buscar caixa" autocomplete="off">
+      <div class="mr-results" id="dgL">${comD.sort().map(k => { const b = keys.get(k), a = diagramOf(k); return `<a href="#" data-dgk="${U.esc(k)}"><b>${U.esc(k)}</b>${b ? '' : ' <span class="tag">caixa não encontrada no mapa</span>'}<br><span class="tiny muted">${U.esc(a.nome)} · ${U.date(a.createdAt)}</span></a>`; }).join('') || '<p class="muted small">Nenhum diagrama enviado ainda.</p>'}</div>`;
+    const up = U.$('#dgUp');
+    up && (up.onclick = async () => {
+      const files = await ui.pickFiles({ accept: '.pdf,.png,.jpg,.jpeg,.webp', multiple: true }); if (!files.length) return;
+      const plano = files.map(f => { const base = f.name.replace(/\.[^.]+$/, ''), k = boxKey(base); const kk = keys.has(k) ? k : [...keys.keys()].find(x => FC.bb.norm(base).replace(/[^a-z0-9]/g, '').includes(x.toLowerCase().replace(/[^a-z0-9]/g, ''))); return { f, k: kk || '', b: kk ? keys.get(kk) : null }; });
+      ui.modal({ title: 'Ligar diagramas às caixas', wide: true,
+        body: `<div class="table-scroll"><table class="tbl"><thead><tr><th>Arquivo</th><th>Caixa</th></tr></thead><tbody>${plano.map((x, i) => `<tr><td class="small">${U.esc(x.f.name)}</td><td><input data-dk="${i}" list="dgBoxes" value="${U.esc(x.k)}" placeholder="Código da caixa (ex.: CEO-1019)" aria-label="Caixa do arquivo ${U.esc(x.f.name)}">${x.b ? '' : '<br><span class="tiny warn-text">Não reconhecida: digite o código</span>'}</td></tr>`).join('')}</tbody></table></div>
+          <datalist id="dgBoxes">${[...keys.keys()].slice(0, 3000).map(k => `<option value="${U.esc(k)}">`).join('')}</datalist>`,
+        actions: [{ label: 'Cancelar', cls: 'ghost' }, { label: 'Enviar e ligar', cls: 'primary', icon: 'check', onClick: async (b) => {
+          let n = 0;
+          for (const [i, x] of plano.entries()) { const k = (U.$(`[data-dk="${i}"]`, b).value || '').trim().toUpperCase(); if (!k) continue; n += await uploadDiagram(k, (keys.get(k) || {}).name || k, [x.f]); }
+          ui.toast(n + ' diagrama(s) ligado(s) às caixas.', 'ok'); tabDiagramas();
+        } }] });
+    });
+    U.$('#dgQ').oninput = (e) => { const q = FC.bb.norm(e.target.value); U.$$('#dgL [data-dgk]').forEach(a => { a.hidden = q && !FC.bb.norm(a.textContent).includes(q); }); };
+    U.$$('[data-dgk]').forEach(a => a.onclick = (e) => { e.preventDefault(); const b = keys.get(a.dataset.dgk); if (b) { M.map.setView(b.pt, 18); const att = diagramOf(a.dataset.dgk); att && ui.openAttachment(att); } else { const att = diagramOf(a.dataset.dgk); att && ui.openAttachment(att); } });
   }
 
   function tabBuscar() {
@@ -311,11 +381,11 @@
     q.oninput = U.debounce(() => {
       const s = FC.bb.norm(q.value); if (s.length < 2) { U.$('#mrQr').innerHTML = ''; return; }
       const hits = [];
-      d.pops.forEach(p => FC.bb.norm(p.name).includes(s) && hits.push({ t: 'POP', n: p.name, pt: p.pt }));
-      d.boxes.forEach(b => FC.bb.norm(b.name).includes(s) && hits.push({ t: b.categoria || 'Caixa', n: b.name, pt: b.pt, sub: b.tipo }));
+      d.pops.forEach((p, pi) => FC.bb.norm(p.name).includes(s) && hits.push({ t: 'POP', n: p.name, pt: p.pt, node: pi, pop: true }));
+      d.boxes.forEach((b, bi) => FC.bb.norm(b.name).includes(s) && hits.push({ t: b.categoria || 'Caixa', n: b.name, pt: b.pt, sub: b.tipo, node: d.pops.length + bi }));
       d.cables.forEach(c => (FC.bb.norm(c.name).includes(s) || FC.bb.norm(c.obs).includes(s)) && hits.push({ t: 'Cabo', n: c.name, line: c.coords, sub: c.tipo }));
       U.$('#mrQr').innerHTML = hits.slice(0, 40).map((h, i) => `<a href="#" data-h="${i}"><span class="tag">${U.esc(h.t)}</span> <b>${U.esc(h.n)}</b>${h.sub ? `<br><span class="tiny muted">${U.esc(h.sub)}</span>` : ''}</a>`).join('') || '<p class="muted small">Nada encontrado.</p>';
-      U.$$('#mrQr [data-h]').forEach(a => a.onclick = (e) => { e.preventDefault(); const h = hits[+a.dataset.h]; if (h.line) { M.map.fitBounds(L.latLngBounds(h.line).pad(.3)); flash(L.polyline(h.line, { color: '#ffd23f', weight: 9, opacity: .8 })); } else { M.map.setView(h.pt, 18); flash(L.circleMarker(h.pt, { radius: 14, color: '#ffd23f', weight: 4, fill: false })); } });
+      U.$$('#mrQr [data-h]').forEach(a => a.onclick = (e) => { e.preventDefault(); const h = hits[+a.dataset.h]; if (h.line) { M.map.fitBounds(L.latLngBounds(h.line).pad(.3)); flash(L.polyline(h.line, { color: '#ffd23f', weight: 9, opacity: .8 })); } else { M.map.setView(h.pt, 18); if (h.node != null) setTimeout(() => L.popup({ maxWidth: 320 }).setLatLng(h.pt).setContent(nodePopup(h.node, h.pop)).openOn(M.map), 350); flash(L.circleMarker(h.pt, { radius: 14, color: '#ffd23f', weight: 4, fill: false })); } });
     }, 150);
     q.focus();
   }
@@ -437,7 +507,7 @@
       const p = pointAt(R.r.det.coords, e.x).pt, col = e.end ? '#111' : LV[e.level] || '#2a6fb5', on = sel.has(e.n);
       const mk = L.circleMarker(p, { radius: e.level === 'reprovado' || e.end ? 10 : 8, color: on ? '#fe6218' : '#fff', weight: on ? 5 : 3, fillColor: col, fillOpacity: 1, className: e.level === 'reprovado' ? 'mr-pulse' : '' })
         .bindTooltip(`Ev. ${e.n} · ${U.m(e.distM, 0)} · ${U.db(e.loss, 3)}`, { permanent: true, direction: 'right', className: 'mr-pop mr-evt', offset: [10, 0] })
-        .bindPopup(`<b>Evento ${e.n}</b> · ${U.esc(e.tipo)}<br>${U.m(e.distM, 1)} no OTDR · ${U.db(e.loss, 3)}${e.reflectance ? ' · refl. ' + U.db(e.reflectance, 1) : ''}<br>${ui.badge(e.end ? 'info' : e.level, e.end ? 'Fim de fibra' : undefined)}${e.note ? '<br><i>' + U.esc(e.note) + '</i>' : ''}<br><span class="tiny">${p[0].toFixed(6)}, ${p[1].toFixed(6)}</span><div class="mr-pp-btns"><button class="btn sm ${on ? '' : 'orange'}" data-evsel="${e.n}">${on ? 'Remover do KMZ' : '+ Incluir no KMZ'}</button><button class="btn sm" data-copy="${p[0].toFixed(6)}, ${p[1].toFixed(6)}">Copiar</button><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[0].toFixed(6)},${p[1].toFixed(6)}">Google Maps</a></div>`);
+        .bindPopup(`<b>Evento ${e.n}</b> · ${U.esc(e.tipo)}<br>${U.m(e.distM, 1)} no OTDR · ${U.db(e.loss, 3)}${e.reflectance ? ' · refl. ' + U.db(e.reflectance, 1) : ''}<br>${ui.badge(e.end ? 'info' : e.level, e.end ? 'Fim de fibra' : undefined)}${e.note ? '<br><i>' + U.esc(e.note) + '</i>' : ''}<br><span class="tiny">${p[0].toFixed(6)}, ${p[1].toFixed(6)}</span><div class="mr-pp-btns">${gmLinks(p)}<button class="btn sm ${on ? '' : 'orange'}" data-evsel="${e.n}">${on ? 'Remover do KMZ' : '+ Incluir no KMZ'}</button><button class="btn sm" data-copy="${p[0].toFixed(6)}, ${p[1].toFixed(6)}">Copiar</button><a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p[0].toFixed(6)},${p[1].toFixed(6)}">Google Maps</a></div>`);
       M.hl.evs.push(mk.addTo(M.map));
     });
   }
@@ -588,6 +658,6 @@ ${cx}
   @media (prefers-reduced-motion:reduce){.mr-pulse{animation:none}}`;
   document.head.appendChild(st);
 
-  FC.mapaRede = { loadSaved, parseFile, setRede, state: M, build, selectLance, exportKMZ, toggleSel };
+  FC.mapaRede = { cabosVisiveis: FC.mapaRede.cabosVisiveis, loadSaved, parseFile, setRede, state: M, build, selectLance, exportKMZ, toggleSel };
   FC.registerModule({ id: 'mapa', order: 20, title: 'Mapa da rede', icon: 'map', group: 'tools', field: true, render });
 })(window.FC = window.FC || {});

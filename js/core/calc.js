@@ -179,7 +179,9 @@
   };
   C.statusLabel = { pendente: 'Pendente', medido: 'Medido', divergente: 'Divergente', certificado: 'Certificado' };
 
-  C.certRequirements = (t) => {
+  // Certificação sem requisitos técnicos: quem tem permissão certifica qualquer trecho (decisão da operação)
+  C.certRequirements = () => ({ reqs: [], ok: true });
+  C._certRequirementsAntigo = (t) => {
     const c = S().certification, m = C.latest(t.id), reqs = [];
     if (c.requireMeasurement) reqs.push({ k: 'Medição OTDR registrada', ok: !!m });
     if (c.requireAttachment) reqs.push({ k: 'Arquivo OTDR anexado (SOR ou PDF)', ok: (FC.store.state.attachments || []).some(a => a.trechoId === t.id && ['sor', 'pdf', 'msor'].includes(U.ext(a.nome))) || !!(m && m.attachmentId) });

@@ -29,6 +29,7 @@
     const files = await ui.pickFiles({ multiple: true, accept: '.pdf,.sor,.msor,.kmz,.kml,.jpg,.jpeg,.png,.webp,.doc,.docx,.xlsx,.csv,.txt' });
     if (!files.length) return;
     for (const f of files) {
+      if (f.size > MAX_FILE) { ui.toast(f.name + ': arquivo muito grande (máximo 60 MB).', 'err'); continue; }
       const e = U.ext(f.name);
       const categoria = e === 'pdf' ? CATS[0] : (e === 'sor' || e === 'msor') ? CATS[1] : (e === 'kmz' || e === 'kml') ? CATS[2] : ['jpg', 'jpeg', 'png', 'webp'].includes(e) ? CATS[3] : CATS[4];
       const att = await store.putFile(f, { trechoId: trecho ? trecho.id : null, linkId: link.id, categoria });
@@ -197,17 +198,23 @@
   /* ---------- Importar teste → enlace + trecho + medição preenchidos automaticamente ---------- */
   FC.importTest = async (presetLink, files, opts = {}) => {
     if (!store.require('medicao.importar')) return;
-    files = files || await ui.pickFiles({ accept: '.pdf,.sor,.msor,.csor,.png,.jpg,.jpeg,image/*', multiple: true });
+    files = files || await ui.pickFiles({ accept: '.pdf,.sor,.msor,.csor,.png,.jpg,.jpeg,.webp,.heic,image/*', multiple: true });
     if (!files.length) return;
-    if (files.length > 1) { FC.go('otdr', { tab: 'lote' }); setTimeout(() => FC.batchAdd(files), 60); return ui.toast(files.length + ' testes enviados para a Importação em lote.', 'info'); }
+    const big = files.find(f => f.size > MAX_FILE); if (big) return ui.toast(`${big.name}: arquivo muito grande (máximo ${MAX_FILE / 1048576} MB).`, 'err', 7000);
+    if (files.length > 1) {
+      const fotos = files.every(f => FC.importers.kindOf(f.name) === 'IMG');
+      const mesmo = opts.sameTest || (fotos && await ui.choose('Várias fotos', `Você enviou ${files.length} fotos. Elas são do mesmo teste (telas diferentes do mesmo enlace) ou de testes diferentes?`, [['mesmo', 'Mesmo teste (juntar as fotos)'], ['lote', 'Testes diferentes']]) === 'mesmo');
+      if (!mesmo) return batchModal(files);
+      opts.extraFiles = files.slice(1); opts.allPhotos = files;
+    }
     const file = files[0], kind = FC.importers.kindOf(file.name);
     if (kind !== 'SOR' && kind !== 'PDF' && kind !== 'IMG') { if (opts.fallback) return opts.fallback(file); return ui.toast('Envie o PDF do relatório, .SOR, .CSOR ou a foto da tela do OTDR.', 'err'); }
     ui.toast('Lendo ' + file.name + '…', 'info', 2000);
-    const prog = kind === 'IMG' ? ocrProgress(file.name) : null;
+    const prog = kind === 'IMG' ? ocrProgress(opts.allPhotos ? opts.allPhotos.length + ' fotos' : file.name) : null;
     let res, buf, hash;
     try {
       buf = await U.readAsArrayBuffer(file); hash = await U.sha256(buf);
-      res = (kind === 'SOR' ? await FC.importers.readSOR(file, buf) : kind === 'PDF' ? await FC.importers.readPDF(file, buf) : await FC.importers.readImage(file, prog.set))[0];
+      res = (kind === 'SOR' ? await FC.importers.readSOR(file, buf) : kind === 'PDF' ? await FC.importers.readPDF(file, buf) : await FC.importers.readImages(opts.allPhotos || [file], prog.set))[0];
     } catch (e) { prog && prog.close(); return ui.toast('Não foi possível ler o teste: ' + (e && e.message || e), 'err', 7000); }
     prog && prog.close();
     const isImg = res.kind === 'IMG';
@@ -289,6 +296,7 @@
         tr.tipo = t.ttipo; if (t.ozmapM !== '') tr.ozmapM = +t.ozmapM;
         store.upsert('trechos', tr, `Trecho ${tr.nome} (${link.nome}) a partir do teste`);
         const m = await FC.saveMeasurement({ res, derived: der, buf, file, fileName: file.name, hash, linkId: link.id, trechoId: tr.id, manual: { launchM: U.parseNum(t.launchM) || 0, data: d.data || now, obs: f.obs } });
+        for (const x of opts.extraFiles || []) { try { await store.putFile(x, { trechoId: tr.id, linkId: link.id, categoria: 'Fotografia de campo', medicaoId: m.id }); } catch (e) { ui.toast('Foto ' + x.name + ' não foi anexada: ' + e.message, 'warn'); } }
         ui.toast(`${L ? 'Medição adicionada' : 'Enlace, trecho e medição cadastrados'}: ${link.nome} / ${tr.nome}.`, 'ok', 6000);
         if (opts.after === 'otdr') FC.go('otdr', { measurementId: m.id, tab: 'individual' });
         else if (opts.after === 'comparativo') FC.go('comparativo', { tab: (tr.caixas || []).length ? 'caixas' : 'comparativo', trechoId: tr.id });
@@ -297,16 +305,42 @@
     });
   };
 
+  /* ---------- Envio de testes (único ponto do sistema) ---------- */
+  const MAX_FILE = 60 * 1048576;
+  const ACC = '.pdf,.sor,.msor,.csor,.png,.jpg,.jpeg,.webp,.heic,image/*';
+  function uploadPanel() {
+    return `<section class="up-panel" id="ldz" aria-label="Subir teste OTDR">
+      <div class="up-head">${ui.icon('otdr')}<div><b>Subir teste OTDR</b><span class="small muted">PDF do SmartOTDR, .SOR/.CSOR ou foto da tela. Origem e Extremidade viram os POPs; cabo, fibras, OS, técnico, distância, perda, ORL e eventos são preenchidos automaticamente.</span></div></div>
+      <div class="up-btns">
+        <button class="btn orange" id="upFile">${ui.icon('upload')}Arquivo do teste</button>
+        <button class="btn" id="upCam">${ui.icon('camera')}Tirar foto da tela</button>
+        <button class="btn" id="upFotos">${ui.icon('image')}Fotos da galeria</button>
+        <button class="btn ghost" id="upLote">${ui.icon('layers')}Vários testes / pasta</button>
+      </div><span class="tiny muted up-drop">ou arraste os arquivos para cá</span></section>`;
+  }
+  function bindUpload(el, link) {
+    const go = (fs, o) => fs && fs.length && FC.importTest(link, fs, o);
+    U.$('#upFile', el).onclick = async () => go(await ui.pickFiles({ accept: ACC, multiple: true }));
+    U.$('#upCam', el).onclick = async () => go(await ui.pickFiles({ accept: 'image/*', capture: 'environment' }));
+    U.$('#upFotos', el).onclick = async () => go(await ui.pickFiles({ accept: 'image/*', multiple: true }));
+    U.$('#upLote', el).onclick = () => batchModal([]);
+    ui.dropzone(U.$('#ldz', el), (fs) => go(fs));
+  }
+  /** Vários testes de uma vez (lote ou pasta), aberto aqui mesmo na aba Enlaces */
+  function batchModal(files) {
+    if (!store.require('medicao.importar')) return;
+    ui.modal({ title: 'Subir vários testes', wide: true, body: '<div id="lotebox"></div>', onOpen: (b) => { FC.renderBatch(U.$('#lotebox', b)); if (files.length) FC.batchAdd(files); }, onClose: () => FC.rerender(), actions: [{ label: 'Fechar', cls: 'ghost' }] });
+  }
+
   /* ---------- Lista ---------- */
   function renderList(el) {
     el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Cadastro</span><h1>Enlaces</h1><p class="muted small">Cada enlace reúne seus trechos, medições, anexos e certificações.</p></div>
-      <div class="acts"><button class="btn orange" id="impTest">${ui.icon('otdr')}Importar teste</button><button class="btn primary" id="newL">${ui.icon('plus')}Novo enlace</button></div></div>
-      <section class="dz" id="ldz">${ui.icon('otdr')}<b>Arraste aqui o teste do OTDR (PDF do SmartOTDR, .SOR, .CSOR ou foto da tela)</b><span class="small muted">Origem e Extremidade viram os POPs; cabo, fibras, OS, técnico, distância, perda, ORL e eventos são preenchidos automaticamente.</span></section>
+      <div class="acts"><button class="btn primary" id="newL">${ui.icon('plus')}Novo enlace</button></div></div>
+      ${uploadPanel()}
       <section class="panel">${FC.filt.html('e')}</section>
       <section class="panel" id="lt"></section>`;
     U.$('#newL').onclick = () => linkForm();
-    U.$('#impTest').onclick = () => FC.importTest();
-    ui.dropzone(U.$('#ldz'), (fs) => FC.importTest(null, fs));
+    bindUpload(el, null);
     FC.filt.bind(el, 'e', (r) => r ? FC.rerender() : draw());
     const draw = () => {
       const rows = FC.filt.links().map(l => Object.assign({ l }, FC.linkTotals(l)));
@@ -355,11 +389,11 @@
         <div><span class="k">Tolerância</span><span class="v">${link.tolCustom ? 'Individual ' + link.tolCustom.max + '%' : 'Global / por tipo'}</span></div>
       </div>${link.obs ? `<p class="small"><b>Observações:</b> ${U.esc(link.obs)}</p>` : ''}
       <div><span class="eyebrow">Anexos do enlace</span> ${FC.attChips(null, link.id)} <button class="btn sm ghost" id="attL">${ui.icon('upload')}Anexar</button></div></section>
-      <section class="panel"><header><h3>Trechos</h3><div class="btn-row"><button class="btn sm" id="impT">${ui.icon('otdr')}Importar teste</button><button class="btn sm primary" id="newT">${ui.icon('plus')}Novo trecho</button></div></header><div id="tt"></div></section>`;
+      <section class="panel"><header><h3>Trechos</h3><div class="btn-row"><button class="btn sm orange" id="impT">${ui.icon('upload')}Subir teste</button><button class="btn sm primary" id="newT">${ui.icon('plus')}Novo trecho</button></div></header><div id="tt"></div></section>`;
     U.$('#back').onclick = () => FC.go('enlaces');
     U.$('#edL').onclick = () => linkForm(link);
     U.$('#newT').onclick = () => trechoForm(link);
-    U.$('#impT').onclick = () => FC.importTest(link);
+    U.$('#impT').onclick = () => ui.choose('Subir teste — ' + link.nome, 'Como você quer enviar o teste?', [['arq', 'Arquivo (PDF, SOR, CSOR)'], ['cam', 'Tirar foto da tela'], ['fotos', 'Fotos da galeria']]).then(async (c) => { if (!c) return; const fs = await ui.pickFiles(c === 'cam' ? { accept: 'image/*', capture: 'environment' } : c === 'fotos' ? { accept: 'image/*', multiple: true } : { accept: ACC, multiple: true }); fs.length && FC.importTest(link, fs); });
     U.$('#attL').onclick = () => FC.attachFlow(null, link);
     U.$('#qrL').onclick = () => FC.qr(link.nome, 'lnk-' + link.id.slice(4));
     U.$('#repL').onclick = () => FC.go('relatorios', { tipo: 'individual', linkId: link.id });

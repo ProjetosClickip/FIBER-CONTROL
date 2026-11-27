@@ -5,7 +5,7 @@
   let groupBy = 'projeto';
 
   function render(el, params) {
-    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Qualidade</span><h1>Certificações</h1><p class="muted small">Um trecho só pode ser certificado quando os requisitos técnicos configurados forem atendidos e a aprovação for registrada.</p></div>
+    el.innerHTML = `<div class="page-head"><div class="t"><span class="eyebrow">Qualidade</span><h1>Certificações</h1><p class="muted small">Certifique os trechos com a aprovação e a assinatura do responsável. Os testes vêm da aba Enlaces.</p></div>
       <div class="acts"><button class="btn" id="rc">${ui.icon('report')}Relatório de certificação</button></div></div>
       <section class="panel"><header><h3>Percentual de certificação</h3><div class="seg">${[['projeto', 'Por projeto'], ['enlace', 'Por enlace'], ['regiao', 'Por região']].map(([k, l]) => `<button class="${groupBy === k ? 'on' : ''}" data-g="${k}">${l}</button>`).join('')}</div></header><div class="grid g2"><div class="chart-box"><canvas id="cg"></canvas></div><div id="cgt"></div></div></section>
       <section class="panel">${FC.filt.html('ce')}<div class="filters">${ui.field('Status', ui.select('cst', [['', 'Todos'], ['pendente', 'Pendente'], ['medido', 'Medido'], ['divergente', 'Divergente'], ['certificado', 'Certificado']], ''))}</div></section>
@@ -34,7 +34,6 @@
           { key: 'resp', label: 'Responsável', render: x => U.esc(x.m ? x.m.responsavel : '—') },
           { key: 'arq', label: 'Arquivo OTDR', render: x => x.m && x.m.attachmentId ? `<button class="chip-file" data-att="${x.m.attachmentId}">${ui.icon('otdr')}<span>${U.esc(x.m.fileName)}</span></button>` : `<span class="muted small">${U.esc(x.m ? x.m.fileName || 'manual' : '—')}</span>` },
           { key: 'res', label: 'Resultado', render: x => x.m ? ui.badge(C.analyze(x.m, x.t).result) : '—' },
-          { key: 'req', label: 'Requisitos', sort: x => x.r.reqs.filter(r => r.ok).length, render: x => `<span class="small ${x.r.ok ? 'ok-text' : 'warn-text'}">${x.r.reqs.filter(r => r.ok).length}/${x.r.reqs.length} atendidos</span>` },
           { key: 'cert', label: 'Certificação', render: x => x.t.certificacao && x.t.certificacao.status === 'certificado' ? `<span class="small">${U.date(x.t.certificacao.data)}<br>por ${U.esc(x.t.certificacao.aprovador)}</span>` : '—' },
           { key: 'a', label: '', sortable: false, render: x => `<button class="btn sm ${x.s === 'certificado' ? 'ghost' : x.r.ok ? 'primary' : ''}" data-c="${x.t.id}">${x.s === 'certificado' ? 'Detalhes' : 'Certificar'}</button>` }
         ]
@@ -55,8 +54,7 @@
     ui.modal({
       title: (isCert ? 'Certificação — ' : 'Certificar — ') + l.nome + ' / ' + t.nome, wide: true,
       body: `<div class="kv"><div><span class="k">Data da medição</span><span class="v">${m ? U.dt(m.data) : '—'}</span></div><div><span class="k">Responsável</span><span class="v">${U.esc(m ? m.responsavel : '—')}</span></div><div><span class="k">Arquivo OTDR</span><span class="v">${U.esc(m ? m.fileName || 'manual' : '—')}</span></div><div><span class="k">Resultado da análise</span><span class="v">${a ? ui.badge(a.result) : '—'}</span></div></div>
-      <h4>Requisitos técnicos</h4><ul class="list-plain" style="list-style:none;padding:0">${r.reqs.map(q => `<li>${q.ok ? `<span class="ok-text">${ui.icon('check')}</span>` : `<span class="bad-text">${ui.icon('x')}</span>`} ${U.esc(q.k)}${q.detail ? ` <span class="tiny muted">(${U.esc(q.detail)})</span>` : ''}</li>`).join('')}</ul>
-      ${isCert ? `<div class="note ok">${ui.icon('cert')}<div>Certificado em <b>${U.dt(cert.data)}</b> por <b>${U.esc(cert.aprovador)}</b>.<br>Observações: ${U.esc(cert.obs || '—')}<br><span class="tiny">Hash da assinatura (SHA-256): ${U.esc(cert.assinaturaHash || '')}</span></div></div>${cert.assinatura ? `<img src="${cert.assinatura}" alt="Assinatura" style="max-width:320px;background:#fff;border:1px solid var(--line);border-radius:8px">` : ''}`
+      ${isCert ? `<div class="note ok">${ui.icon('cert')}<div>Certificado em <b>${U.dt(cert.data)}</b> por <b>${U.esc(cert.aprovador)}</b>.<br>Observações: ${U.esc(cert.obs || '—')}<br><span class="tiny">Hash da assinatura (SHA-256): ${U.esc(cert.assinaturaHash || '')}</span></div></div>${U.safeImg(cert.assinatura) ? `<img src="${U.esc(U.safeImg(cert.assinatura))}" alt="Assinatura" style="max-width:320px;background:#fff;border:1px solid var(--line);border-radius:8px">` : ''}`
       : !r.ok ? `<div class="note bad">${ui.icon('alert')}<div>A certificação está bloqueada até todos os requisitos serem atendidos.</div></div>`
       : !canApprove ? `<div class="note warn">${ui.icon('alert')}<div>Seu perfil não aprova certificações. Solicite a um Supervisor, Engenheiro ou Administrador.</div></div>`
       : `<form class="form-grid" id="cf">${ui.field('Responsável pela aprovação', ui.input('aprov', store.user().nome, 'readonly'))}${ui.field('Data da certificação', ui.input('dc', U.dt(U.now()), 'readonly'), 'Automática')}${ui.field('Observações', '<textarea name="obs"></textarea>', '', 'full')}

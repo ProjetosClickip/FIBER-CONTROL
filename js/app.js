@@ -15,7 +15,26 @@
   FC.isDark = () => { const t = document.documentElement.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
 
   /* ---------- Senhas locais (somente modo navegador/demonstração) ---------- */
-  const hashPass = (email, pass) => U.sha256('fc|' + U.norm(email) + '|' + pass);
+  const legacyHash = (email, pass) => U.sha256('fc|' + U.norm(email) + '|' + pass);
+  const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  async function pbkdf2(pass, salt, it = 210000) { const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveBits']); return b64(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: it }, k, 256)); }
+  const hashPass = async (email, pass) => { const salt = b64(crypto.getRandomValues(new Uint8Array(16))); return 'pbkdf2$210000$' + salt + '$' + await pbkdf2(pass, salt); };
+  /** Confere a senha local (aceita o formato antigo e o atualiza) */
+  FC.checkPass = async (u, email, pass) => {
+    if (!u || !u.senha) return false;
+    if (u.senha.startsWith('pbkdf2$')) { const [, it, salt, h] = u.senha.split('$'); return (await pbkdf2(pass, salt, +it)) === h; }
+    if (u.senha === await legacyHash(email, pass)) { u.senha = await hashPass(email, pass); store.save(); return true; }
+    return false;
+  };
+  FC.hashPass = hashPass;
+
+  /* limite de tentativas de login neste aparelho (5 erros → espera de 5 minutos) */
+  const LG = 'fc-login-tentativas';
+  const lgGet = () => { try { return JSON.parse(localStorage.getItem(LG)) || {}; } catch (e) { return {}; } };
+  const lgSet = (o) => { try { localStorage.setItem(LG, JSON.stringify(o)); } catch (e) { /* sem armazenamento */ } };
+  async function loginGuard(email) { const o = lgGet()[U.norm(email)]; return !(o && o.n >= 5 && Date.now() - o.t < 5 * 60000); }
+  function loginFail(email) { const all = lgGet(), k = U.norm(email), o = all[k] && Date.now() - all[k].t < 5 * 60000 ? all[k] : { n: 0 }; all[k] = { n: o.n + 1, t: Date.now() }; lgSet(all); }
+  function loginOk(email) { const all = lgGet(); delete all[U.norm(email)]; lgSet(all); }
 
   /* ---------- Login ---------- */
   function renderLogin() {
@@ -52,10 +71,11 @@
           await FC.supa.pull();
           let u = st.users.find(x => x.authId === au.id) || st.users.find(x => !x.authId && U.norm(x.email) === U.norm(f.email));
           if (u && !u.authId) { u.authId = au.id; await FC.supa.write('upsert', 'users', u); }          // membro migrado assume o perfil
-          if (!u) { u = { id: U.uid('usr_'), authId: au.id, nome: (au.user_metadata && au.user_metadata.nome) || f.nome || f.email, email: f.email, role: 'visualizador', ativo: true }; await FC.supa.write('upsert', 'users', u); }
+          if (!u) { u = { id: U.uid('usr_'), authId: au.id, nome: (au.user_metadata && au.user_metadata.nome) || f.nome || f.email, email: f.email, role: 'pendente', ativo: true }; await FC.supa.write('upsert', 'users', u); }
           await FC.supa.pull();                                                                           // papel definido pelo banco
           u = st.users.find(x => x.authId === au.id) || u;
-          if (!u.ativo) throw new Error('Acesso desativado. Fale com o administrador.');
+          if (!u.ativo) { await FC.supa.signOut(); throw new Error('Acesso desativado. Fale com o administrador.'); }
+          if (u.role === 'pendente') { await FC.supa.signOut(); store.state.session = null; throw new Error('Sua conta foi criada e está aguardando a liberação do administrador. Avise o responsável e entre de novo depois.'); }
           return enter(u);
         }
         if (first) {
@@ -64,7 +84,9 @@
           return enter(u);
         }
         const u = st.users.find(x => U.norm(x.email) === U.norm(f.email));
-        if (!u || !u.senha || u.senha !== await hashPass(f.email, f.senha)) throw new Error('E-mail ou senha incorretos.');
+        if (!(await loginGuard(f.email))) throw new Error('Muitas tentativas. Aguarde alguns minutos e tente de novo.');
+        if (!u || !(await FC.checkPass(u, f.email, f.senha))) { loginFail(f.email); throw new Error('E-mail ou senha incorretos.'); }
+        loginOk(f.email);
         if (!u.ativo) throw new Error('Acesso desativado. Fale com o administrador.');
         enter(u);
       } catch (ex) { err.textContent = ex.message || String(ex); err.hidden = false; }
@@ -93,6 +115,15 @@
     const h = location.hash.slice(1);
     FC.go(h || 'dashboard');
   }
+  /** Sessão encerrada após 12 horas sem uso neste aparelho */
+  const IDLE_MS = 12 * 3600000, IDLE_KEY = 'fc-ultimo-uso';
+  FC.idleGuard = () => {
+    const now = Date.now(); let last = 0; try { last = +localStorage.getItem(IDLE_KEY) || 0; } catch (e) { /* */ }
+    if (last && now - last > IDLE_MS && store.state.session) { store.state.session = null; store.save(); if (store.mode === 'supabase') FC.supa.signOut().catch(() => {}); setTimeout(() => ui.toast('Sessão encerrada por inatividade. Entre de novo.', 'info', 6000), 300); }
+    const touch = U.debounce(() => { try { localStorage.setItem(IDLE_KEY, String(Date.now())); } catch (e) { /* */ } }, 5000);
+    touch(); ['pointerdown', 'keydown', 'visibilitychange'].forEach(ev => document.addEventListener(ev, touch, { passive: true }));
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') return; let l = 0; try { l = +localStorage.getItem(IDLE_KEY) || 0; } catch (e) { /* */ } if (l && Date.now() - l > IDLE_MS && store.state.session) FC.logout(); });
+  };
   FC.logout = () => { store.audit('saiu', 'session', null, 'Logout'); store.state.session = null; store.save(); if (store.mode === 'supabase') FC.supa.signOut(); renderLogin(); };
 
   /* ---------- Estrutura ---------- */
@@ -128,8 +159,8 @@
       </div>
     </div>
     <nav class="fieldbar" aria-label="Ações de campo">
-      <button data-fb="otdr">${ui.icon('upload')}Importar teste</button>
-      <button data-fb="enlaces">${ui.icon('link')}Enlaces</button>
+      <button data-fb="enlaces" class="main-act">${ui.icon('upload')}Enlaces · subir</button>
+      <button data-fb="otdr">${ui.icon('otdr')}Análise</button>
       <button data-fb="mapa">${ui.icon('map')}Mapa</button>
       <button data-fb="historico">${ui.icon('history')}Histórico</button>
     </nav>`;
@@ -139,12 +170,13 @@
     U.$('#themeBtn').onclick = () => { const next = FC.isDark() ? 'light' : 'dark'; store.setSettings('theme', next); FC.applyTheme(); FC.rerender(); };
     U.$('#fieldBtn').onclick = (e) => { store.setSettings('fieldMode', !store.state.settings.fieldMode, 'Modo campo'); FC.applyTheme(); e.currentTarget.classList.toggle('on', store.state.settings.fieldMode); ui.toast(store.state.settings.fieldMode ? 'Modo campo ativado: botões grandes e menu simplificado.' : 'Modo escritório ativado.', 'ok'); };
     // Menu do usuário: sair (todos) e, para o administrador, liberar o acesso de quem entra na equipe
-    const um = U.$('#userMenu');
+    const um = U.$('#userMenu'), pend = () => store.state.users.filter(x => x.role === 'pendente' && x.ativo !== false).length;
+    if (u.role === 'admin' && pend()) setTimeout(() => ui.toast(`${pend()} pessoa(s) aguardando liberação de acesso (menu do seu nome › Acessos da equipe).`, 'info', 8000), 900);
     U.$('#userBtn').onclick = (e) => {
       e.stopPropagation();
       if (!um.hidden) { um.hidden = true; return; }
       um.innerHTML = `<div class="item" style="cursor:default">${FC.avatar(u)}<div><b>${U.esc(u.nome)}</b><br><small class="muted">${U.esc(u.email || '')} · ${U.esc(FC.roles[u.role].label)}</small></div></div>
-        ${u.role === 'admin' ? `<div class="item" role="menuitem" tabindex="0" data-um="acessos">${ui.icon('team')}<div>Acessos da equipe<br><small class="muted">Liberar quem criou conta e definir o nível de cada um</small></div></div>` : ''}
+        ${u.role === 'admin' ? `<div class="item" role="menuitem" tabindex="0" data-um="acessos">${ui.icon('team')}<div>Acessos da equipe${pend() ? ` <span class="badge warn">${pend()} aguardando</span>` : ''}<br><small class="muted">Liberar quem criou conta e definir o nível de cada um</small></div></div>` : ''}
         <div class="item" role="menuitem" tabindex="0" data-um="sair">${ui.icon('logout')}<div>Sair</div></div>`;
       um.hidden = false;
       U.$$('[data-um]', um).forEach(it => it.onclick = () => { um.hidden = true; if (it.dataset.um === 'sair') FC.logout(); else FC.go('equipe', { menu: true }); });
@@ -159,7 +191,7 @@
     store.on((w) => { if (w === 'net' || w === 'queue') updateNet(); if (w === 'change') { refreshCounts(); } });
     refreshCounts();
   }
-  FC.avatar = (u, cls = '') => u && u.foto ? `<span class="avatar ${cls}"><img src="${u.foto}" alt=""></span>` : `<span class="avatar ${cls}">${U.esc(((u && u.nome) || '?').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase())}</span>`;
+  FC.avatar = (u, cls = '') => u && U.safeImg(u.foto) ? `<span class="avatar ${cls}"><img src="${U.esc(U.safeImg(u.foto))}" alt=""></span>` : `<span class="avatar ${cls}">${U.esc(((u && u.nome) || '?').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase())}</span>`;
 
   function updateNet() {
     const el = U.$('#net'); if (!el) return;
@@ -286,7 +318,9 @@
         ui.toast('Supabase indisponível agora (' + e.message + '). Você pode continuar: o que registrar fica guardado e é enviado sozinho quando a conexão voltar.', 'warn', 9000);
       }
     }
-    const u = store.user();
+    let u = store.user();
+    if (u && (u.role === 'pendente' || !u.ativo || !FC.roles[u.role])) { store.state.session = null; store.save(); if (store.mode === 'supabase') FC.supa.signOut().catch(() => {}); u = null; }
+    FC.idleGuard();
     if (u) { renderShell(); FC.go(location.hash.slice(1) || 'dashboard'); } else renderLogin();
   };
 })(window.FC = window.FC || {});

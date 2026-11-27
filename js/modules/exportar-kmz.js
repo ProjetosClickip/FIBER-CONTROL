@@ -209,7 +209,7 @@
     const buf = await file.arrayBuffer(); const ext = String(file.name).split('.').pop().toLowerCase();
     const xmls = [];
     if (ext === 'kmz') {
-      const z = await window.JSZip.loadAsync(buf);
+      const z = FC.util.zipGuard(await window.JSZip.loadAsync(buf));
       const names = Object.keys(z.files).filter(n => /\.kml$/i.test(n) && !z.files[n].dir);
       if (!names.length) throw new Error('O KMZ não contém arquivo .kml.');
       for (const n of names) xmls.push(await z.files[n].async('string'));

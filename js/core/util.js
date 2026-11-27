@@ -72,11 +72,26 @@
 
   /** Carrega script externo sob demanda (bibliotecas pesadas: pdf.js, tesseract, supabase) */
   const loaded = {};
+  // integridade (SRI): o navegador recusa o arquivo se a CDN entregar algo diferente da versão conferida
+  const SRI = {
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js': 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e',
+    'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js': 'sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F',
+    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js': 'sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o'
+  };
   U.loadScript = (src) => loaded[src] || (loaded[src] = new Promise((res, rej) => {
-    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => { delete loaded[src]; rej(new Error('Não foi possível carregar ' + src)); };
+    const s = document.createElement('script'); s.src = src; if (SRI[src]) { s.integrity = SRI[src]; s.crossOrigin = 'anonymous'; } s.referrerPolicy = 'no-referrer'; s.onload = res; s.onerror = () => { delete loaded[src]; rej(new Error('Não foi possível carregar ' + src)); };
     document.head.appendChild(s);
   }));
 
+  /** Só aceita imagem embutida (data:image/…;base64) ou blob: — bloqueia injeção de código por atributo src */
+  U.safeImg = (src) => typeof src === 'string' && (/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(src) || /^blob:/.test(src)) ? src : '';
+  /** Proteção contra arquivo compactado malicioso ("zip bomb"): limita quantidade e tamanho descompactado */
+  U.zipGuard = (zip, maxMB = 300, maxFiles = 3000) => {
+    const fs = Object.values(zip.files); if (fs.length > maxFiles) throw new Error('Arquivo compactado com itens demais.');
+    const tot = fs.reduce((n, f) => n + ((f._data && f._data.uncompressedSize) || 0), 0);
+    if (tot > maxMB * 1048576) throw new Error('Arquivo compactado grande demais depois de aberto (limite ' + maxMB + ' MB).');
+    return zip;
+  };
   U.storage = {
     get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { console.warn('localStorage indisponível', e); return false; } },

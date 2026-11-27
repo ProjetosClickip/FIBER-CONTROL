@@ -29,16 +29,19 @@
     const n = doc.getNumberOfPages(), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), u = store.user();
     for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(`ClickIP FiberControl · gerado em ${U.dt(U.now())} por ${u ? u.nome : '—'}${store.state.meta.demo ? ' · CONTÉM DADOS DE DEMONSTRAÇÃO' : ''}`, 12, H - 7); doc.text(`Página ${i} de ${n}`, W - 12, H - 7, { align: 'right' }); }
   }
+  // a fonte padrão do PDF não tem a seta →: troca por ->
+  const pdfTxt = (v) => String(v == null ? '' : v).replace(/→/g, '->').replace(/[‐–—]/g, '-');
   function kv(doc, pairs, cols = 4) {
     const W = doc.internal.pageSize.getWidth() - 24, cw = W / cols; let x = 12, y = doc._y, i = 0;
     pairs.forEach(([k, v]) => {
-      doc.setFontSize(7); doc.setTextColor(120); doc.text(String(k).toUpperCase(), x, y);
-      doc.setFontSize(9.5); doc.setTextColor(20); doc.text(doc.splitTextToSize(String(v == null ? '—' : v), cw - 4), x, y + 4.5);
+      doc.setFontSize(7); doc.setTextColor(120); doc.text(pdfTxt(k).toUpperCase(), x, y);
+      doc.setFontSize(9.5); doc.setTextColor(20); doc.text(doc.splitTextToSize(v == null ? '—' : pdfTxt(v), cw - 4), x, y + 4.5);
       i++; x += cw; if (i % cols === 0) { x = 12; y += 12; }
     });
     doc._y = y + (i % cols ? 12 : 0) + 2;
   }
   function table(doc, head, body, opts = {}) {
+    head = head.map(pdfTxt); body = body.map(r => r.map(c => typeof c === 'number' ? c : pdfTxt(c)));
     doc.autoTable(Object.assign({ head: [head], body, startY: doc._y, theme: 'grid', styles: { fontSize: 7.6, cellPadding: 1.6, overflow: 'linebreak' }, headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold' }, alternateRowStyles: { fillColor: [244, 248, 250] }, margin: { left: 12, right: 12 } }, opts));
     doc._y = doc.lastAutoTable.finalY + 6;
   }
@@ -48,14 +51,15 @@
   /** Linha completa de um trecho com todos os campos exigidos nos relatórios */
   R.trechoRow = (t) => {
     const l = store.get('links', t.linkId) || {}, m = C.latest(t.id), c = C.compare(t, m), b = C.budget(t, m), cap = C.capacity(t);
-    return {
+    return withId(t.id, {
       Projeto: l.projeto, 'POP A → POP B': `${l.popA || '—'} → ${l.popB || '—'}`, Enlace: l.nome, Trecho: t.nome, Tipo: t.tipo,
       'OZmap (m)': c.ozmap != null ? +c.ozmap.toFixed(1) : '', 'OTDR (m)': c.otdr != null ? +c.otdr.toFixed(1) : '', 'Diferença (m)': c.diffM != null ? +c.diffM.toFixed(1) : '', 'Diferença (%)': c.diffPct != null ? +c.diffPct.toFixed(2) : '', Comparativo: stLabel[c.status],
       'Perda prevista (dB)': b.pred ? +b.pred.total.toFixed(3) : '', 'Perda medida (dB)': b.measured != null ? +b.measured.toFixed(3) : '', 'λ (nm)': m ? m.wavelength : '',
       Emendas: t.emendas, Conectores: t.conectores, 'Fibras (cabo/livres)': `${t.caboFO || '?'}FO / ${cap.rest == null ? '?' : cap.rest}`, 'Situação das fibras': { verde: 'Adequada', amarelo: 'Baixa', vermelho: 'Esgotada', 'sem-dados': 'Sem dados' }[cap.status],
       Certificação: C.statusLabel[C.trechoStatus(t)], 'Data da medição': m ? U.date(m.data) : '', 'Responsável técnico': m ? m.responsavel : l.responsavel, Aprovador: t.certificacao && t.certificacao.status === 'certificado' ? t.certificacao.aprovador : '', Observações: [t.obs, m && m.obs].filter(Boolean).join(' | ')
-    };
+    });
   };
+  function withId(id, o) { Object.defineProperty(o, '_id', { value: id, enumerable: false }); return o; }
   const pdfCols = ['Trecho', 'OZmap (m)', 'OTDR (m)', 'Diferença (m)', 'Diferença (%)', 'Comparativo', 'Perda prevista (dB)', 'Perda medida (dB)', 'Emendas', 'Conectores', 'Fibras (cabo/livres)', 'Certificação', 'Data da medição', 'Responsável técnico', 'Observações'];
   const colorize = (data) => { if (data.section !== 'body') return; const v = String(data.cell.raw); if (v === 'VERMELHO' || v === 'Esgotada' || v === 'Divergente') data.cell.styles.textColor = [200, 40, 30]; if (v === 'AMARELO' || v === 'Baixa') data.cell.styles.textColor = [170, 115, 0]; if (v === 'VERDE' || v === 'Certificado' || v === 'Adequada') data.cell.styles.textColor = [10, 130, 80]; };
 
@@ -97,19 +101,37 @@
     if (tipo !== 'divergencias') ts = [...ts].sort(sortL);
     return ts.map(R.trechoRow);
   };
+  /** Informações editadas pelo usuário (valem só para o documento gerado; o cadastro não muda) */
+  const applyEdits = (rows, edits) => { if (!edits) return rows; rows.forEach(r => { const e = edits[r._id]; if (e) Object.keys(e).forEach(k => { r[k] = e[k]; }); }); return rows; };
+  R.applyEdits = applyEdits;
+  function metaBlock(doc, meta) {
+    if (!meta) return;
+    const pares = [['Cliente / destinatário', meta.cliente], ['Responsável técnico', meta.responsavel], ['OS / referência', meta.os], ['Data do relatório', meta.data]].filter(p => p[1]);
+    if (pares.length) kv(doc, pares, 4);
+  }
+  function conclusao(doc, meta) {
+    if (!meta || !meta.conclusao) return;
+    const W = doc.internal.pageSize.getWidth() - 24, linhas = doc.splitTextToSize(meta.conclusao, W);
+    if (doc._y + 10 + linhas.length * 4.5 > doc.internal.pageSize.getHeight() - 14) { doc.addPage(); doc._y = 16; }
+    doc.setFontSize(10); doc.setTextColor(...NAVY); doc.text('Observações / conclusão', 12, doc._y); doc._y += 5;
+    doc.setFontSize(9); doc.setTextColor(20); doc.text(linhas, 12, doc._y); doc._y += linhas.length * 4.5 + 4;
+  }
   R.generate = async (tipo, fmt, opts = {}) => {
-    const rows = R.rowsFor(tipo, opts);
+    const rows = applyEdits(R.rowsFor(tipo, opts), opts.edits), meta = opts.meta || {};
     const tpl = R.templates[tipo];
     const fname = (tipo + '-' + (opts.linkId ? (store.get('links', opts.linkId) || {}).nome : opts.projeto || 'geral')).replace(/[^\w-]+/g, '-').toLowerCase() + '-' + U.now().slice(0, 10);
     if (fmt === 'xlsx') {
-      const sheets = { [tpl.label.slice(0, 31)]: rows.length ? rows : [{ Aviso: 'Sem registros' }] };
+      const sheets = { [(meta.titulo || tpl.label).slice(0, 31)]: rows.length ? rows : [{ Aviso: 'Sem registros' }] };
+      const info = [['Título', meta.titulo], ['Subtítulo', meta.subtitulo], ['Cliente / destinatário', meta.cliente], ['Responsável técnico', meta.responsavel], ['OS / referência', meta.os], ['Data do relatório', meta.data], ['Observações / conclusão', meta.conclusao]].filter(p => p[1]).map(([Campo, Valor]) => ({ Campo, Valor }));
+      if (info.length) sheets['Informações'] = info;
       if (tipo === 'capacidade') sheets['Fibras'] = rows.map(r => ({ Enlace: r.Enlace, Trecho: r.Trecho, 'Fibras (cabo/livres)': r['Fibras (cabo/livres)'], Situação: r['Situação das fibras'] }));
       if (tipo === 'certificacao') sheets['Assinaturas'] = store.state.trechos.filter(t => t.certificacao && t.certificacao.status === 'certificado').map(t => ({ Enlace: (store.get('links', t.linkId) || {}).nome, Trecho: t.nome, Data: U.dt(t.certificacao.data), Aprovador: t.certificacao.aprovador, Resultado: t.certificacao.resultado || '', 'Hash SHA-256': t.certificacao.assinaturaHash }));
       return R.xlsx(sheets, fname, opts.returnBlob);
     }
     if (!need()) return;
-    if (tipo === 'individual') { const l = store.get('links', opts.linkId); return R.linkPDF(l, opts.returnBlob); }
-    const doc = await newDoc(tpl.label, opts.projeto ? 'Projeto: ' + opts.projeto : 'Todos os projetos');
+    if (tipo === 'individual') { const l = store.get('links', opts.linkId); return R.linkPDF(l, opts.returnBlob, opts); }
+    const doc = await newDoc(meta.titulo || tpl.label, meta.subtitulo || (opts.projeto ? 'Projeto: ' + opts.projeto : 'Todos os projetos'));
+    metaBlock(doc, meta);
     const all = rows;
     const n = (k, v) => all.filter(r => r[k] === v).length;
     kv(doc, [['Trechos', all.length], ['Certificados', n('Certificação', 'Certificado')], ['Divergentes', n('Comparativo', 'VERMELHO')], ['Atenção', n('Comparativo', 'AMARELO')], ['Capacidade esgotada', n('Situação das fibras', 'Esgotada')], ['Capacidade baixa', n('Situação das fibras', 'Baixa')], ['Tolerância global', store.state.settings.tolerance.max + '%'], ['Mín. fibras livres', store.state.settings.fibers.min]]);
@@ -118,22 +140,26 @@
     if (tipo === 'certificacao') cols = ['Enlace', 'Trecho', 'Comparativo', 'Perda medida (dB)', 'Certificação', 'Data da medição', 'Responsável técnico', 'Aprovador'];
     if (tipo === 'divergencias') cols = ['Enlace', 'Trecho', 'Tipo', 'OZmap (m)', 'OTDR (m)', 'Diferença (m)', 'Diferença (%)', 'Comparativo', 'Perda prevista (dB)', 'Perda medida (dB)', 'Responsável técnico'];
     table(doc, cols, all.map(r => cols.map(c => r[c] == null ? '' : r[c])), { didParseCell: colorize });
+    conclusao(doc, meta);
     if (opts.returnBlob) { footer(doc); return doc.output('blob'); }
     return save(doc, fname);
   };
 
-  R.linkPDF = async (l, returnBlob = false) => {
+  R.linkPDF = async (l, returnBlob = false, opts = {}) => {
     if (!l || !need()) return;
-    const doc = await newDoc('Relatório individual de enlace', l.projeto);
+    const meta = opts.meta || {};
+    const doc = await newDoc(meta.titulo || 'Relatório individual de enlace', meta.subtitulo || l.projeto);
+    metaBlock(doc, meta);
     const tot = FC.linkTotals(l);
     kv(doc, [['Projeto', l.projeto], ['POP A → POP B', `${l.popA || '—'} → ${l.popB || '—'}`], ['Enlace', l.nome], ['Cabo', `${l.caboId || '—'} (${l.tipoCabo || '—'})`], ['Fibras', (l.fibras || '—') + ' FO'], ['Distância OZmap', U.km(tot.oz)], ['Região', l.regiao], ['Responsável técnico', l.responsavel], ['Trechos', tot.ts.length], ['Certificação', `${tot.cert}/${tot.ts.length} (${U.num(tot.pct, 0)}%)`], ['Cadastro', U.dt(l.criadoEm)], ['Observações', l.obs || '—']]);
-    const rows = R.rowsFor('individual', { linkId: l.id });
+    const rows = applyEdits(R.rowsFor('individual', { linkId: l.id }), opts.edits);
     table(doc, pdfCols, rows.map(r => pdfCols.map(c => r[c] == null ? '' : r[c])), { didParseCell: colorize });
     const certs = tot.ts.filter(t => t.certificacao && t.certificacao.status === 'certificado');
     if (certs.length) {
       doc.setFontSize(10); doc.setTextColor(...NAVY); doc.text('Aprovações registradas', 12, doc._y); doc._y += 4;
       table(doc, ['Trecho', 'Data', 'Aprovador', 'Hash SHA-256 da assinatura'], certs.map(t => [t.nome, U.dt(t.certificacao.data), t.certificacao.aprovador, (t.certificacao.assinaturaHash || '').slice(0, 40)]));
     }
+    conclusao(doc, meta);
     const name = ('enlace-' + l.nome).replace(/[^\w-]+/g, '-').toLowerCase();
     if (returnBlob) { footer(doc); return doc.output('blob'); }
     return save(doc, name);

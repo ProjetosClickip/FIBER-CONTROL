@@ -48,13 +48,15 @@ Abra o site. Ele já mostra "Conectado ao Supabase". Preencha **nome, e-mail e s
 Cada membro abre o endereço do site (`https://gilzin29.github.io/CLICK-IP/`), preenche nome, e-mail e senha e clica em **Criar conta**.
 
 - **Membro já cadastrado na Equipe:** se o e-mail for o mesmo, ele assume automaticamente o perfil e o nível de acesso migrados.
-- **Pessoa nova:** entra como **Visualizador**. O Administrador promove em *Equipe*.
+- **Pessoa nova:** a conta entra **bloqueada (Aguardando liberação)** e não vê nenhum dado. O Administrador libera pelo menu do seu nome (canto superior direito) › **Acessos da equipe**, escolhendo o nível. Quem já foi pré-cadastrado pelo e-mail em *Acessos da equipe* entra direto com o nível definido.
+- **Recomendado:** em Supabase › Authentication › Providers › Email, mantenha **Confirm email** ligado. Se a equipe for fechada, desligue **Allow new users to sign up** e convide pelo painel (Authentication › Users › Invite).
 
 ## Regras aplicadas pelo banco
 
 As permissões valem também fora do aplicativo, nas políticas RLS e nos gatilhos do `schema.sql`:
 
-- Só Administrador muda níveis de acesso. Ninguém se autopromove.
+- Só Administrador muda níveis de acesso e ativa/desativa contas. Ninguém se autopromove nem se reativa.
+- Após atualizar o sistema, rode de novo o `supabase/schema.sql` no SQL Editor (pode rodar quantas vezes quiser; não apaga dados).
 - Só Supervisor, Engenheiro ou Administrador certificam.
 - Medições não podem ser apagadas (histórico permanente). A auditoria é só inclusão.
 - Parâmetros técnicos: Administrador e Engenheiro.
